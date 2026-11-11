@@ -88,7 +88,7 @@
                             <TextBlock Text="Size" Style="{StaticResource TitleTextBlockStyle}" Margin="0,8,0,8" />
                             <controls:SettingsCard Header="At rest">
                                 <StackPanel Orientation="Horizontal" Spacing="16">
-                                    <Slider x:Name="RestSlider" Width="260" Minimum="0.75" Maximum="2" StepFrequency="0.05" VerticalAlignment="Center" />
+                                    <Slider x:Name="RestSlider" Width="260" Minimum="0.5" Maximum="2" StepFrequency="0.05" VerticalAlignment="Center" />
                                     <TextBlock x:Name="RestValue" Width="56" TextAlignment="Right" VerticalAlignment="Center"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </StackPanel>

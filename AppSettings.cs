@@ -125,7 +125,7 @@ public sealed class AppSettings
 
     private void Clamp()
     {
-        RestScale = Math.Clamp(RestScale, 0.75f, 2.0f);
+        RestScale = Math.Clamp(RestScale, 0.5f, 2.0f);
         MaxScale = Math.Clamp(MaxScale, 1.5f, 4.0f);
         Sensitivity = Math.Clamp(Sensitivity, 0.5f, 2.0f);
         LingerSeconds = Math.Clamp(LingerSeconds, 0.25f, 3.0f);

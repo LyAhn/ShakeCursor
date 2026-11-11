@@ -71,7 +71,7 @@ Changes apply live and are saved to `%APPDATA%\ShakeCursor\settings.json`
 
 | Page | Setting | Range |
 |---|---|---|
-| Size | At rest | 0.75–2.0× |
+| Size | At rest | 0.5–2.0× |
 | Size | When shaking | 1.5–4.0× |
 | Shake | Sensitivity | 0.5–2.0× |
 | Shake | Hold time | 0.25–3.0 s |
