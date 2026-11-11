@@ -33,4 +33,24 @@
     <Content Include="Assets\ShakeCursor.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!--
+    A self-contained Windows App SDK publish copies the whole framework payload,
+    including ~50 MB this app never touches (Windows AI / ML runtime, widgets)
+    and 80+ localized resource folders. Drop them after publishing; the UI is
+    English-only and falls back to the built-in en-us resources.
+  -->
+  <Target Name="TrimUnusedWindowsAppSdk" AfterTargets="Publish" Condition="'$(WindowsAppSDKSelfContained)' == 'true'">
+    <ItemGroup>
+      <UnusedFile Include="$(PublishDir)Microsoft.Windows.AI*;$(PublishDir)Microsoft.ML.OnnxRuntime.dll;$(PublishDir)onnxruntime*.dll;$(PublishDir)DirectML.dll" />
+      <UnusedFile Include="$(PublishDir)Microsoft.Windows.Workloads*;$(PublishDir)Microsoft.Windows.Private.Workloads*;$(PublishDir)workloads*.json" />
+      <UnusedFile Include="$(PublishDir)Microsoft.Windows.Widgets*" />
+      <PublishSubDir Include="$([System.IO.Directory]::GetDirectories('$(PublishDir)'))" />
+      <UnusedDir Include="@(PublishSubDir)"
+                 Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(Filename)', '^[a-z]{2,3}(-[A-Za-z0-9]+)+$')) And '%(Filename)' != 'en-us'" />
+      <UnusedDir Include="$(PublishDir)NpuDetect" />
+    </ItemGroup>
+    <Delete Files="@(UnusedFile)" />
+    <RemoveDir Directories="@(UnusedDir)" />
+  </Target>
+
 </Project>

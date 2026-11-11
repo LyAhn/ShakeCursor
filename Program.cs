@@ -451,16 +451,19 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
     }
 
     /// <summary>
-    /// The settings app is a large self-contained WinUI app (~200 MB). Its first
-    /// launch after a boot, an update or an antivirus definition update is slow
-    /// (10 s measured) because Windows has to read and scan all its files cold.
-    /// So, shortly after startup and at background I/O priority, read every file
-    /// and then start the app once, hidden, so the real launch hits warm caches.
+    /// The settings app's first launch after each install or update is slow
+    /// (~12 s measured): Windows, or the antivirus, checks a never-seen
+    /// executable the first time it runs, and nothing but running it satisfies
+    /// that. So shortly after startup, run it once hidden (<c>--warm</c>: no
+    /// window, no single-instance lock, exits after ~1.5 s) and, meanwhile, read
+    /// the rest of its files at background I/O priority. The real launch then
+    /// finds everything checked and cached.
     /// </summary>
     private static void WarmSettingsFiles()
     {
         string dir = Path.Combine(AppContext.BaseDirectory, "Settings");
-        if (!Directory.Exists(dir))
+        string exe = Path.Combine(dir, "ShakeCursor.Settings.exe");
+        if (!File.Exists(exe))
         {
             return;
         }
@@ -469,7 +472,15 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         {
             try
             {
-                Thread.Sleep(TimeSpan.FromSeconds(4)); // let the tray icon and cursor settle first
+                Thread.Sleep(TimeSpan.FromSeconds(2)); // let the tray icon and cursor settle first
+                using var warm = System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(exe, "--warm")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WorkingDirectory = dir,
+                    });
+
                 SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
                 var buffer = new byte[1 << 20];
                 foreach (string file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
@@ -483,18 +494,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
                 }
                 SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
 
-                string exe = Path.Combine(dir, "ShakeCursor.Settings.exe");
-                if (File.Exists(exe))
-                {
-                    using var warm = System.Diagnostics.Process.Start(
-                        new System.Diagnostics.ProcessStartInfo(exe, "--warm")
-                        {
-                            UseShellExecute = false,
-                            CreateNoWindow = true,
-                            WorkingDirectory = dir,
-                        });
-                    warm?.WaitForExit(20000);
-                }
+                warm?.WaitForExit(40000);
                 Diagnostics.Log("settings app warmed");
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
