@@ -26,8 +26,15 @@
   </ItemGroup>
 
   <Target Name="BuildSettingsApp" AfterTargets="Build" Condition="'$(SkipSettingsBuild)' != 'true'">
+    <PropertyGroup>
+      <SettingsOutDir>$([System.IO.Path]::GetFullPath('$(OutDir)Settings'))</SettingsOutDir>
+    </PropertyGroup>
+    <!-- A nested project is not restored by the outer restore, so restore it first
+         (a unique session id forces a fresh evaluation after the restore). -->
+    <MSBuild Projects="Settings\ShakeCursor.Settings.csproj" Targets="Restore"
+             Properties="Platform=x64;MSBuildRestoreSessionId=$([System.Guid]::NewGuid())" />
     <MSBuild Projects="Settings\ShakeCursor.Settings.csproj"
-             Properties="Configuration=$(Configuration);Platform=x64;OutDir=$([System.IO.Path]::GetFullPath('$(OutDir)Settings\'))" />
+             Properties="Configuration=$(Configuration);Platform=x64;OutDir=$(SettingsOutDir)" />
   </Target>
 
 </Project>
