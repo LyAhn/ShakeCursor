@@ -7,6 +7,8 @@ enlargement impossible natively. ShakeCursor blanks the real system arrow and
 draws its own replacement as a topmost, click-through layered window — so the
 cursor is a vector shape that scales smoothly and stays crisp at any size.
 
+![ShakeCursor settings, with the live preview mid-shake](docs/settings.png)
+
 ## How it works
 
 1. **`CursorSwapper`** creates a fully-transparent cursor (`CreateCursor` with
@@ -102,3 +104,7 @@ Feel constants that are not exposed in the UI live at the top of
 - Full cursor set with faithful shapes (I-beam, resize, hand) — requires
   intercepting `SetCursor` globally via an injected hook DLL.
 - DirectComposition rendering for even lower-latency animation.
+
+## Licence
+
+[MIT](LICENSE)
