@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Assets\ShakeCursor.ico</ApplicationIcon>
+    <AssemblyName>ShakeCursor</AssemblyName>
+    <RootNamespace>ShakeCursor</RootNamespace>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\ShakeCursor.ico" LogicalName="ShakeCursor.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The WinUI 3 settings app lives in Settings\ and builds as its own project. -->
+    <Compile Remove="Settings\**" />
+    <EmbeddedResource Remove="Settings\**" />
+    <None Remove="Settings\**" />
+  </ItemGroup>
+
+  <Target Name="BuildSettingsApp" AfterTargets="Build">
+    <MSBuild Projects="Settings\ShakeCursor.Settings.csproj"
+             Properties="Configuration=$(Configuration);Platform=x64;OutDir=$([System.IO.Path]::GetFullPath('$(OutDir)Settings\'))" />
+  </Target>
+
+</Project>
