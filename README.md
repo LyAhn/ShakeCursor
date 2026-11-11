@@ -38,13 +38,24 @@ cursor is a vector shape that scales smoothly and stays crisp at any size.
    `settings.json`; the tray app watches that file and applies changes live, so
    the two never talk directly. Its preview runs its own `ShakeDetector`.
 
-## Running
+## Download
+
+Grab the latest `ShakeCursor-vX.Y.Z-win-x64.zip` from
+[Releases](https://github.com/LyAhn/ShakeCursor/releases), unzip it anywhere and
+run `ShakeCursor.exe`. It is self-contained (no runtime install) and needs
+Windows 10 1809 or later on x64. The build is unsigned, so SmartScreen may warn
+on first run. A `.sha256` file is published alongside each zip.
+
+Releases are cut by pushing a version tag (`git tag v1.0.1 && git push origin v1.0.1`);
+the **Release** workflow builds and publishes the zip.
+
+## Building from source
 
 ```
 dotnet run --project ShakeCursor
 ```
 
-Requires the .NET 10 SDK and the Windows App Runtime 1.8. A tray icon appears ("ShakeCursor"). Shake your mouse
+Building needs the .NET 10 SDK and the Windows App Runtime 1.8. A tray icon appears ("ShakeCursor"). Shake your mouse
 vigorously — the cursor grows, then settles back. Open **Settings...** from the
 tray menu; exit (and restore your cursor) from the same menu.
 `ShakeCursor --settings` opens the settings window on launch. A normal build
