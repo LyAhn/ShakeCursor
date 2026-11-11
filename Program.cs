@@ -150,6 +150,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
         _watcher.Start();
         UpdateExclusion();
+        WarmSettingsFiles();
 
         if (!_settings.FirstRunShown)
         {
@@ -310,18 +311,74 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         }
     }
 
-    /// <summary>Opens the WinUI settings app (it focuses the existing window if already open).</summary>
+    /// <summary>
+    /// Opens the WinUI settings app (it focuses the existing window if already
+    /// open). Launched off the UI thread and without the shell: starting an
+    /// unsigned exe can stall for seconds (SmartScreen / Defender scan), and
+    /// doing that on the UI thread froze the tray menu until it finished.
+    /// </summary>
     private static void ShowSettings()
     {
         string exe = Path.Combine(AppContext.BaseDirectory, "Settings", "ShakeCursor.Settings.exe");
-        try
+        _ = Task.Run(() =>
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true });
-        }
-        catch (Exception ex)
+            try
+            {
+                using var process = System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(exe)
+                    {
+                        UseShellExecute = false,
+                        WorkingDirectory = Path.GetDirectoryName(exe)!,
+                    });
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Log("Could not start settings app: " + ex.Message);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The settings app is a large self-contained WinUI app. Its first launch
+    /// after a boot or an update is slow because Windows has to read and
+    /// virus-scan all its files cold, so read them once in the background at
+    /// low priority; the real launch then hits the cache.
+    /// </summary>
+    private static void WarmSettingsFiles()
+    {
+        string dir = Path.Combine(AppContext.BaseDirectory, "Settings");
+        if (!Directory.Exists(dir))
         {
-            Diagnostics.Log("Could not start settings app: " + ex.Message);
+            return;
         }
+
+        new Thread(() =>
+        {
+            try
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(15)); // stay out of the way of startup
+                var buffer = new byte[1 << 20];
+                foreach (string file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    using var stream = new FileStream(
+                        file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
+                        bufferSize: 1, FileOptions.SequentialScan);
+                    while (stream.Read(buffer, 0, buffer.Length) > 0)
+                    {
+                    }
+                }
+                Diagnostics.Log("settings files warmed");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Best effort only.
+            }
+        })
+        {
+            Name = "SettingsWarmup",
+            IsBackground = true,
+            Priority = ThreadPriority.Lowest,
+        }.Start();
     }
 
     /// <summary>Asks an open settings window to close so it doesn't outlive the tray app.</summary>
