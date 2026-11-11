@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>Assets\ShakeCursor.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
     <AssemblyName>ShakeCursor</AssemblyName>
     <RootNamespace>ShakeCursor</RootNamespace>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
@@ -24,7 +25,7 @@
     <None Remove="Settings\**" />
   </ItemGroup>
 
-  <Target Name="BuildSettingsApp" AfterTargets="Build">
+  <Target Name="BuildSettingsApp" AfterTargets="Build" Condition="'$(SkipSettingsBuild)' != 'true'">
     <MSBuild Projects="Settings\ShakeCursor.Settings.csproj"
              Properties="Configuration=$(Configuration);Platform=x64;OutDir=$([System.IO.Path]::GetFullPath('$(OutDir)Settings\'))" />
   </Target>
