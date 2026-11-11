@@ -206,6 +206,14 @@
                             <controls:SettingsCard Header="Desktop shortcut">
                                 <ToggleSwitch x:Name="ShortcutToggle" OnContent="" OffContent="" MinWidth="0" />
                             </controls:SettingsCard>
+                            <controls:SettingsCard Header="Pause in fullscreen apps"
+                                                   Description="Hands the normal cursor back while a game or fullscreen video is in front.">
+                                <ToggleSwitch x:Name="PauseFullscreenToggle" OnContent="" OffContent="" MinWidth="0" />
+                            </controls:SettingsCard>
+                            <controls:SettingsCard Header="Pause hotkey"
+                                                   Description="Ctrl + Alt + Shift + P pauses or resumes ShakeCursor from anywhere.">
+                                <ToggleSwitch x:Name="PauseHotkeyToggle" OnContent="" OffContent="" MinWidth="0" />
+                            </controls:SettingsCard>
                             <controls:SettingsCard Header="Download updates automatically"
                                                    Description="Checks for a new version every 12 hours. You can still check by hand below.">
                                 <ToggleSwitch x:Name="AutoUpdateToggle" OnContent="" OffContent="" MinWidth="0" />

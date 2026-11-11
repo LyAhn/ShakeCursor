@@ -41,6 +41,9 @@ internal sealed class Updater : IDisposable
     /// <summary>Raised on the UI thread when a non-installed copy finds a newer release.</summary>
     public event Action<string>? UpdateAvailable;
 
+    /// <summary>The GitHub release page for a version.</summary>
+    public static string ReleasePageFor(string version) => $"{RepoUrl}/releases/tag/v{version}";
+
     /// <summary>True when this copy can update itself.</summary>
     public bool IsInstalled => _manager.IsInstalled;
 
@@ -180,7 +183,8 @@ internal sealed class Updater : IDisposable
         Post(() => UpdateAvailable?.Invoke(AvailableVersion));
     }
 
-    private static string CurrentVersionText()
+    /// <summary>This build's version, e.g. "1.1.0".</summary>
+    public static string CurrentVersionText()
     {
         string? info = System.Reflection.Assembly.GetEntryAssembly()?
             .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)

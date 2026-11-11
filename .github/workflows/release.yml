@@ -75,4 +75,8 @@ jobs:
           Pop-Location
           gh release upload "${{ github.ref_name }}" (Get-ChildItem Releases/*.sha256).FullName --clobber
 
-          gh release edit "${{ github.ref_name }}" --notes "Run **ShakeCursor-win-Setup.exe** to install (Windows 10 1809 or later, x64, no runtime needed). Installed copies update themselves. A portable zip is also attached; it does not auto-update. The build is unsigned, so Windows SmartScreen may warn on first run."
+          # Install instructions first, then GitHub's generated "what changed" list.
+          $install = "Run **ShakeCursor-win-Setup.exe** to install (Windows 10 1809 or later, x64, no runtime needed). Installed copies update themselves. A portable zip is also attached; it does not auto-update. The build is unsigned, so Windows SmartScreen may warn on first run."
+          $changes = gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="${{ github.ref_name }}" --jq .body
+          Set-Content -Path release-notes.md -Value "$install`n`n$changes" -Encoding utf8
+          gh release edit "${{ github.ref_name }}" --notes-file release-notes.md

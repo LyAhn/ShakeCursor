@@ -61,6 +61,8 @@ public sealed partial class MainWindow : Window
         AutostartToggle.IsOn = IsAutostartEnabled();
         ShortcutToggle.IsOn = DesktopShortcut.Exists();
         AutoUpdateToggle.IsOn = settings.AutoUpdate;
+        PauseFullscreenToggle.IsOn = settings.PauseInFullscreen;
+        PauseHotkeyToggle.IsOn = settings.PauseHotkey;
         UpdateCard.Header = "ShakeCursor " + AppVersion();
         foreach (string app in settings.ExcludedApps)
         {
@@ -85,6 +87,8 @@ public sealed partial class MainWindow : Window
         AutostartToggle.Toggled += (_, _) => AppSettings.Update(s => s.StartWithWindows = AutostartToggle.IsOn);
         ShortcutToggle.Toggled += (_, _) => DesktopShortcut.Set(ShortcutToggle.IsOn);
         AutoUpdateToggle.Toggled += (_, _) => AppSettings.Update(s => s.AutoUpdate = AutoUpdateToggle.IsOn);
+        PauseFullscreenToggle.Toggled += (_, _) => AppSettings.Update(s => s.PauseInFullscreen = PauseFullscreenToggle.IsOn);
+        PauseHotkeyToggle.Toggled += (_, _) => AppSettings.Update(s => s.PauseHotkey = PauseHotkeyToggle.IsOn);
         UpdateButton.Click += (_, _) => OnUpdateButtonClicked();
 
         _updateTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();

@@ -89,6 +89,12 @@ Changes apply live and are saved to `%APPDATA%\ShakeCursor\settings.json`
 | Appearance | Shadow | on / off |
 | Apps | Excluded apps | process names (pick a running app or browse for an `.exe`) |
 | General | Start with Windows | on / off (the tray app applies it to the per-user Run registry key) |
+| General | Pause in fullscreen apps | on / off (on by default) |
+| General | Pause hotkey | on / off (Ctrl+Alt+Shift+P, on by default) |
+
+**Pausing:** **Pause ShakeCursor** in the tray menu (or the hotkey) hands the real
+cursor back until you resume. ShakeCursor also pauses by itself while a
+fullscreen app or game is in front, if that setting is on.
 
 **Excluded apps:** while an excluded app is in the foreground, ShakeCursor
 hands the real system arrow back and hides its overlay; it takes over again

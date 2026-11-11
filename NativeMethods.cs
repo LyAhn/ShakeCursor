@@ -147,6 +147,22 @@ internal static class NativeMethods
     [DllImport("kernel32.dll")]
     public static extern IntPtr GetCurrentProcess();
 
+    public const uint MOD_ALT = 0x1;
+    public const uint MOD_CONTROL = 0x2;
+    public const uint MOD_SHIFT = 0x4;
+    public const uint MOD_NOREPEAT = 0x4000;
+    public const int WM_HOTKEY = 0x0312;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    /// <summary>Returns an HRESULT; state 2 = a fullscreen app, 3 = a fullscreen Direct3D app.</summary>
+    [DllImport("shell32.dll")]
+    public static extern int SHQueryUserNotificationState(out int state);
+
     public const int THREAD_MODE_BACKGROUND_BEGIN = 0x00010000;
     public const int THREAD_MODE_BACKGROUND_END = 0x00020000;
 

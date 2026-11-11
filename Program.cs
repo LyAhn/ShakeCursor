@@ -50,6 +50,9 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
     private readonly ToolStripMenuItem _updateItem;
     private readonly ToolStripMenuItem _pauseItem;
     private bool _userPaused;
+    private bool _fullscreenActive;
+    private HotkeyWindow? _hotkeyWindow;
+    private System.Windows.Forms.Timer? _fullscreenTimer;
     private string? _updateStatusText;
     private Action? _balloonAction; // what clicking the current balloon does; null opens settings
     private readonly EventWaitHandle? _cleanExit;
@@ -140,6 +143,12 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         ListenForSettingsRequests();
         PublishUpdateStatus();
 
+        _fullscreenTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+        _fullscreenTimer.Tick += (_, _) => UpdateFullscreen();
+        _fullscreenTimer.Start();
+
+        ShowWhatsNewIfUpdated();
+
         _tray.BalloonTipClicked += (_, _) =>
         {
             if (_balloonAction is not null)
@@ -215,8 +224,62 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
     {
         if (_updater.AvailableUrl is string url)
         {
-            _ = Task.Run(() => System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })?.Dispose());
+            OpenUrl(url);
+        }
+    }
+
+    private static void OpenUrl(string url) =>
+        _ = Task.Run(() => System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })?.Dispose());
+
+    /// <summary>
+    /// After Velopack has updated the app, point at the release notes once. Only
+    /// installed copies take part, so a dev build or portable zip never shows it
+    /// or disturbs the remembered version.
+    /// </summary>
+    private void ShowWhatsNewIfUpdated()
+    {
+        string current = Updater.CurrentVersionText();
+        if (!_updater.IsInstalled || !Version.TryParse(current, out Version? now))
+        {
+            return;
+        }
+
+        if (Version.TryParse(_settings.LastRunVersion, out Version? last) && now > last)
+        {
+            _balloonAction = () => OpenUrl(Updater.ReleasePageFor(current));
+            _tray.ShowBalloonTip(
+                10000,
+                "ShakeCursor updated",
+                $"You're now on version {current}. Click here to see what's new.",
+                ToolTipIcon.Info);
+        }
+
+        if (_settings.LastRunVersion != current)
+        {
+            _settings.LastRunVersion = current;
+            AppSettings.Update(s => s.LastRunVersion = current);
+        }
+    }
+
+    private void OnPauseHotkey()
+    {
+        TogglePause();
+        _balloonAction = null;
+        _tray.ShowBalloonTip(1500, "ShakeCursor", _userPaused ? "Paused" : "Resumed", ToolTipIcon.None);
+    }
+
+    /// <summary>True while a fullscreen app or game is in front (the shell's "busy" states).</summary>
+    private static bool IsFullscreenAppActive() =>
+        SHQueryUserNotificationState(out int state) == 0 && state is 2 or 3;
+
+    private void UpdateFullscreen()
+    {
+        bool fullscreen = _settings.PauseInFullscreen && IsFullscreenAppActive();
+        if (fullscreen != _fullscreenActive)
+        {
+            _fullscreenActive = fullscreen;
+            UpdateExclusion();
         }
     }
 
@@ -340,6 +403,10 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         _shaker.Sensitivity = _settings.Sensitivity;
         _shaker.LingerSeconds = _settings.LingerSeconds;
         _updater?.AutoCheck = _settings.AutoUpdate;
+
+        _hotkeyWindow ??= new HotkeyWindow(OnPauseHotkey);
+        _hotkeyWindow.SetEnabled(_settings.PauseHotkey);
+        UpdateFullscreen();
     }
 
     // Re-evaluates the excluded-apps list whenever the foreground window changes.
@@ -381,7 +448,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             }
         }
 
-        excluded |= _userPaused;
+        excluded |= _userPaused || _fullscreenActive;
         if (excluded == _excludedActive)
         {
             return;
@@ -398,7 +465,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             _swapper.Resume();
             _watcher.Paused = false;
         }
-        Diagnostics.Log($"suspended={excluded} (paused={_userPaused})");
+        Diagnostics.Log($"suspended={excluded} (paused={_userPaused}, fullscreen={_fullscreenActive})");
     }
 
     private void ReloadSettings()
@@ -535,6 +602,8 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        _fullscreenTimer?.Dispose();
+        _hotkeyWindow?.Dispose();
         _updater.Dispose();
         _settingsFile.Dispose();
         _watcher.Stop();
