@@ -1,0 +1,57 @@
+name: Release
+
+# Push a tag like v1.0.0 and this builds, packages and publishes a GitHub release.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish tray app
+        run: >
+          dotnet publish ShakeCursor.csproj -c Release -r win-x64 --self-contained true
+          -p:SkipSettingsBuild=true -p:Version=${{ steps.version.outputs.value }}
+          -o artifacts/ShakeCursor
+
+      - name: Publish settings app
+        run: >
+          dotnet publish Settings/ShakeCursor.Settings.csproj -c Release -r win-x64
+          -p:Platform=x64 --self-contained true -p:WindowsAppSDKSelfContained=true
+          -p:Version=${{ steps.version.outputs.value }}
+          -o artifacts/ShakeCursor/Settings
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "ShakeCursor-${{ github.ref_name }}-win-x64"
+          Compress-Archive -Path artifacts/ShakeCursor/* -DestinationPath "artifacts/$name.zip"
+          $hash = (Get-FileHash "artifacts/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File "artifacts/$name.zip.sha256" -Encoding ascii
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create "${{ github.ref_name }}" artifacts/*.zip artifacts/*.sha256
+          --title "ShakeCursor ${{ github.ref_name }}"
+          --generate-notes
+          --notes "Unzip anywhere and run **ShakeCursor.exe** (Windows 10 1809 or later, x64). Self-contained: no runtime install needed. The build is unsigned, so Windows SmartScreen may warn on first run."
