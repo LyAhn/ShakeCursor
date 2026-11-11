@@ -34,6 +34,8 @@ public sealed partial class MainWindow : Window
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly ObservableCollection<string> _apps = new();
     private readonly DispatcherQueueTimer _saveTimer;
+    private readonly DispatcherQueueTimer _updateTimer;
+    private DateTime _updateRequestedAt = DateTime.MinValue;
     private readonly UIElement[] _pages;
     private double _lastTime;
     private string _fill = "#000000";
@@ -57,6 +59,9 @@ public sealed partial class MainWindow : Window
         _outline = settings.OutlineColor;
         ShadowToggle.IsOn = settings.Shadow;
         AutostartToggle.IsOn = IsAutostartEnabled();
+        ShortcutToggle.IsOn = DesktopShortcut.Exists();
+        AutoUpdateToggle.IsOn = settings.AutoUpdate;
+        UpdateCard.Header = "ShakeCursor " + AppVersion();
         foreach (string app in settings.ExcludedApps)
         {
             _apps.Add(app);
@@ -78,6 +83,15 @@ public sealed partial class MainWindow : Window
         }
         ShadowToggle.Toggled += (_, _) => OnChanged();
         AutostartToggle.Toggled += (_, _) => AppSettings.Update(s => s.StartWithWindows = AutostartToggle.IsOn);
+        ShortcutToggle.Toggled += (_, _) => DesktopShortcut.Set(ShortcutToggle.IsOn);
+        AutoUpdateToggle.Toggled += (_, _) => AppSettings.Update(s => s.AutoUpdate = AutoUpdateToggle.IsOn);
+        UpdateButton.Click += (_, _) => OnUpdateButtonClicked();
+
+        _updateTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
+        _updateTimer.Interval = TimeSpan.FromMilliseconds(500);
+        _updateTimer.Tick += (_, _) => RefreshUpdateUi();
+        _updateTimer.Start();
+        RefreshUpdateUi();
         SwapButton.Click += (_, _) =>
         {
             (_fill, _outline) = (_outline, _fill);
@@ -93,6 +107,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             CompositionTarget.Rendering -= OnRender;
+            _updateTimer.Stop();
             Save();
         };
 
@@ -280,6 +295,72 @@ public sealed partial class MainWindow : Window
         _outline = d.OutlineColor;
         ShadowToggle.IsOn = d.Shadow;
         OnChanged();
+    }
+
+    // --- Updates (the tray app owns Velopack; we show its status and send requests) ---
+
+    private static string AppVersion()
+    {
+        string? info = typeof(MainWindow).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion;
+        return info is null ? "" : info.Split('+')[0];
+    }
+
+    private void OnUpdateButtonClicked()
+    {
+        var status = UpdateBridge.Read();
+        if (status?.ReleaseUrl is string url)
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+            return;
+        }
+        bool sent = UpdateBridge.Signal(
+            status?.PendingVersion is not null ? UpdateBridge.ApplyEvent : UpdateBridge.CheckEvent);
+        if (sent)
+        {
+            _updateRequestedAt = DateTime.UtcNow;
+        }
+        RefreshUpdateUi();
+    }
+
+    private void RefreshUpdateUi()
+    {
+        if (!UpdateBridge.TrayListening())
+        {
+            UpdateCard.Description = "ShakeCursor isn't running, so it can't check for updates.";
+            UpdateButton.Content = "Check for updates";
+            UpdateButton.IsEnabled = false;
+            return;
+        }
+
+        var status = UpdateBridge.Read();
+        if (status is null)
+        {
+            UpdateCard.Description = "";
+            UpdateButton.Content = "Check for updates";
+            UpdateButton.IsEnabled = true;
+            return;
+        }
+
+        // The status file lags a click by a moment; bridge the gap so the button never looks dead.
+        bool justClicked = (DateTime.UtcNow - _updateRequestedAt).TotalSeconds < 1.5 && !status.Busy;
+        if (justClicked && status.PendingVersion is null)
+        {
+            UpdateCard.Description = "Checking for updates...";
+            UpdateButton.Content = "Checking...";
+            UpdateButton.IsEnabled = false;
+            return;
+        }
+
+        UpdateCard.Description = status.Text.Length > 0 ? status.Text
+            : status.Installed ? "" : "This copy updates manually. Checks GitHub for newer releases.";
+        UpdateButton.IsEnabled = !status.Busy;
+        UpdateButton.Content = status.Busy ? "Working..."
+            : status.PendingVersion is not null ? "Restart to update"
+            : status.ReleaseUrl is not null ? "Open download page"
+            : "Check for updates";
     }
 
     // --- Autostart (the tray app owns the write; we only read the registry) ---

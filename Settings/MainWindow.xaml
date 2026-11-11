@@ -203,6 +203,16 @@
                             <controls:SettingsCard Header="Start with Windows">
                                 <ToggleSwitch x:Name="AutostartToggle" OnContent="" OffContent="" MinWidth="0" />
                             </controls:SettingsCard>
+                            <controls:SettingsCard Header="Desktop shortcut">
+                                <ToggleSwitch x:Name="ShortcutToggle" OnContent="" OffContent="" MinWidth="0" />
+                            </controls:SettingsCard>
+                            <controls:SettingsCard Header="Download updates automatically"
+                                                   Description="Checks for a new version every 12 hours. You can still check by hand below.">
+                                <ToggleSwitch x:Name="AutoUpdateToggle" OnContent="" OffContent="" MinWidth="0" />
+                            </controls:SettingsCard>
+                            <controls:SettingsCard x:Name="UpdateCard" Header="ShakeCursor">
+                                <Button x:Name="UpdateButton" Content="Check for updates" />
+                            </controls:SettingsCard>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>

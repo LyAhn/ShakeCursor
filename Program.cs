@@ -48,7 +48,10 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly Updater _updater;
     private readonly ToolStripMenuItem _updateItem;
-    private bool _updateBalloonShown;
+    private readonly ToolStripMenuItem _pauseItem;
+    private bool _userPaused;
+    private string? _updateStatusText;
+    private Action? _balloonAction; // what clicking the current balloon does; null opens settings
     private readonly EventWaitHandle? _cleanExit;
     private readonly System.Windows.Forms.Timer _reloadDebounce = new() { Interval = 150 };
     private readonly FileSystemWatcher _settingsFile;
@@ -88,6 +91,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         }
         var ui = SynchronizationContext.Current;
         _updater = new Updater(); // captures the UI sync context set above
+        _updater.AutoCheck = _settings.AutoUpdate;
         FileSystemEventHandler onChange = (_, _) => ui?.Post(_ => { _reloadDebounce.Stop(); _reloadDebounce.Start(); }, null);
         _settingsFile.Changed += onChange;
         _settingsFile.Created += onChange;
@@ -105,6 +109,8 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Settings...", (System.Drawing.Image?)null, (_, _) => ShowSettings());
+        _pauseItem = new ToolStripMenuItem("Pause ShakeCursor", null, (_, _) => TogglePause());
+        menu.Items.Add(_pauseItem);
         _updateItem = new ToolStripMenuItem("Check for updates", null, (_, _) => OnUpdateItemClicked());
         menu.Items.Add(_updateItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -127,15 +133,18 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
         _updater.UpdateReady += OnUpdateReady;
         _updater.Status += OnUpdateStatus;
+        _updater.UpdateAvailable += OnUpdateAvailable;
         _updater.Notice += OnUpdateNotice;
         _updater.Start();
         RefreshUpdateItem();
+        ListenForSettingsRequests();
+        PublishUpdateStatus();
 
         _tray.BalloonTipClicked += (_, _) =>
         {
-            if (_updateBalloonShown)
+            if (_balloonAction is not null)
             {
-                ApplyUpdateAndExit();
+                _balloonAction();
             }
             else
             {
@@ -173,16 +182,16 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
     private void RefreshUpdateItem()
     {
-        _updateItem.Visible = _updater.IsInstalled;
-        _updateItem.Text = _updater.PendingVersion is string v
-            ? $"Restart to update to {v}"
+        _updateItem.Text = _updater.PendingVersion is string v ? $"Restart to update to {v}"
+            : _updater.AvailableVersion is string a ? $"Download version {a}"
             : "Check for updates";
     }
 
     private void OnUpdateReady(string version)
     {
         RefreshUpdateItem();
-        _updateBalloonShown = true;
+        PublishUpdateStatus();
+        _balloonAction = ApplyUpdateAndExit;
         _tray.ShowBalloonTip(
             10000,
             "ShakeCursor update ready",
@@ -190,26 +199,111 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             ToolTipIcon.Info);
     }
 
+    private void OnUpdateAvailable(string version)
+    {
+        RefreshUpdateItem();
+        PublishUpdateStatus();
+        _balloonAction = OpenReleasePage;
+        _tray.ShowBalloonTip(
+            10000,
+            "ShakeCursor update available",
+            $"Version {version} is out. Click here to open the download page.",
+            ToolTipIcon.Info);
+    }
+
+    private void OpenReleasePage()
+    {
+        if (_updater.AvailableUrl is string url)
+        {
+            _ = Task.Run(() => System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })?.Dispose());
+        }
+    }
+
     private void OnUpdateStatus(string? status)
     {
+        _updateStatusText = status;
         if (status is null)
         {
             _updateItem.Enabled = true;
-            _tray.Text = "ShakeCursor";
             RefreshUpdateItem();
-            return;
         }
+        else
+        {
+            // The menu item doubles as a progress readout.
+            _updateItem.Enabled = false;
+            _updateItem.Text = status;
+        }
+        RefreshTrayText();
+        PublishUpdateStatus();
+    }
 
-        // The menu item doubles as a progress readout; NotifyIcon.Text caps at 63 chars.
-        _updateItem.Enabled = false;
-        _updateItem.Text = status;
-        string tip = "ShakeCursor - " + status;
+    /// <summary>NotifyIcon.Text caps at 63 chars.</summary>
+    private void RefreshTrayText()
+    {
+        string tip = "ShakeCursor" + (_userPaused ? " (paused)" : "")
+            + (_updateStatusText is null ? "" : " - " + _updateStatusText);
         _tray.Text = tip.Length <= 63 ? tip : tip[..63];
+    }
+
+    /// <summary>Tells the settings window what the updater is doing.</summary>
+    private void PublishUpdateStatus()
+    {
+        string text = _updateStatusText
+            ?? (_updater.PendingVersion is string v ? $"Version {v} is ready to install."
+                : _updater.AvailableVersion is string a ? $"Version {a} is available."
+                : _updater.LastResult ?? "");
+        UpdateBridge.Write(new UpdateStatus
+        {
+            Installed = _updater.IsInstalled,
+            Busy = _updateStatusText is not null,
+            Text = text,
+            PendingVersion = _updater.PendingVersion,
+            ReleaseUrl = _updater.AvailableUrl,
+        });
+    }
+
+    /// <summary>Lets the settings window trigger a check or a restart-to-update.</summary>
+    private void ListenForSettingsRequests()
+    {
+        var check = new EventWaitHandle(false, EventResetMode.AutoReset, UpdateBridge.CheckEvent);
+        var apply = new EventWaitHandle(false, EventResetMode.AutoReset, UpdateBridge.ApplyEvent);
+        var ui = SynchronizationContext.Current;
+
+        new Thread(() =>
+        {
+            var handles = new WaitHandle[] { check, apply };
+            while (true)
+            {
+                int which = WaitHandle.WaitAny(handles);
+                if (which == 0)
+                {
+                    ui?.Post(_ => OnUpdateItemClicked(), null);
+                }
+                else
+                {
+                    ui?.Post(_ => ApplyUpdateAndExit(), null);
+                }
+            }
+        })
+        {
+            Name = "SettingsRequests",
+            IsBackground = true,
+        }.Start();
+    }
+
+    private void TogglePause()
+    {
+        _userPaused = !_userPaused;
+        _pauseItem.Checked = _userPaused;
+        _pauseItem.Text = _userPaused ? "Resume ShakeCursor" : "Pause ShakeCursor";
+        RefreshTrayText();
+        UpdateExclusion();
     }
 
     private void OnUpdateNotice(string text)
     {
-        _updateBalloonShown = false;
+        _balloonAction = null;
         _tray.ShowBalloonTip(5000, "ShakeCursor", text, ToolTipIcon.Info);
     }
 
@@ -218,6 +312,11 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         if (_updater.PendingVersion is not null)
         {
             ApplyUpdateAndExit();
+            return;
+        }
+        if (_updater.AvailableUrl is not null)
+        {
+            OpenReleasePage();
             return;
         }
 
@@ -240,6 +339,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         _swapper.Configure(_settings.RestScale, _settings.MaxScale, fill, outline, _settings.Shadow);
         _shaker.Sensitivity = _settings.Sensitivity;
         _shaker.LingerSeconds = _settings.LingerSeconds;
+        _updater?.AutoCheck = _settings.AutoUpdate;
     }
 
     // Re-evaluates the excluded-apps list whenever the foreground window changes.
@@ -281,6 +381,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             }
         }
 
+        excluded |= _userPaused;
         if (excluded == _excludedActive)
         {
             return;
@@ -297,7 +398,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             _swapper.Resume();
             _watcher.Paused = false;
         }
-        Diagnostics.Log($"exclusion {(excluded ? "active" : "cleared")}");
+        Diagnostics.Log($"suspended={excluded} (paused={_userPaused})");
     }
 
     private void ReloadSettings()

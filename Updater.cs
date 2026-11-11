@@ -1,3 +1,5 @@
+using System.Net.Http;
+using System.Text.Json;
 using Velopack;
 using Velopack.Sources;
 
@@ -12,6 +14,7 @@ namespace ShakeCursor;
 internal sealed class Updater : IDisposable
 {
     private const string RepoUrl = "https://github.com/LyAhn/ShakeCursor";
+    private const string LatestReleaseApi = "https://api.github.com/repos/LyAhn/ShakeCursor/releases/latest";
 
     private static readonly TimeSpan FirstCheckDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(12);
@@ -21,6 +24,22 @@ internal sealed class Updater : IDisposable
     private readonly SemaphoreSlim _busy = new(1, 1);
     private System.Threading.Timer? _timer;
     private VelopackAsset? _pending;
+
+    /// <summary>When false, only manual checks run (the 12-hourly background check is skipped).</summary>
+    public volatile bool AutoCheck = true;
+
+    /// <summary>Outcome of the last check ("You're on the latest version."), or null.</summary>
+    public string? LastResult { get; private set; }
+
+    /// <summary>
+    /// For copies that can't update themselves (portable zip, dev build): the
+    /// newer version found on GitHub and the page to download it from.
+    /// </summary>
+    public string? AvailableVersion { get; private set; }
+    public string? AvailableUrl { get; private set; }
+
+    /// <summary>Raised on the UI thread when a non-installed copy finds a newer release.</summary>
+    public event Action<string>? UpdateAvailable;
 
     /// <summary>True when this copy can update itself.</summary>
     public bool IsInstalled => _manager.IsInstalled;
@@ -42,15 +61,17 @@ internal sealed class Updater : IDisposable
 
     public void Start()
     {
-        if (!IsInstalled)
+        if (IsInstalled)
         {
-            Diagnostics.Log("updater: not a Velopack install, update checks disabled");
-            return;
+            _pending = _manager.UpdatePendingRestart;
+        }
+        else
+        {
+            Diagnostics.Log("updater: not a Velopack install, will only point at new releases");
         }
 
-        _pending = _manager.UpdatePendingRestart;
         _timer = new System.Threading.Timer(
-            _ => _ = CheckAsync(manual: false), null, FirstCheckDelay, CheckInterval);
+            _ => { if (AutoCheck) { _ = CheckAsync(manual: false); } }, null, FirstCheckDelay, CheckInterval);
     }
 
     private void Post(Action action) => _ui?.Post(_ => action(), null);
@@ -62,18 +83,29 @@ internal sealed class Updater : IDisposable
     /// </summary>
     public async Task CheckAsync(bool manual)
     {
-        if (!IsInstalled || _pending is not null || !await _busy.WaitAsync(0))
+        if (_pending is not null || !await _busy.WaitAsync(0))
         {
             return;
         }
 
         string? result = null;
+        LastResult = null;
         try
         {
             Post(() => Status?.Invoke("Checking for updates..."));
             if (manual)
             {
                 Post(() => Notice?.Invoke("Checking for updates..."));
+            }
+
+            if (!IsInstalled)
+            {
+                await CheckReleasePageAsync();
+                if (AvailableVersion is null)
+                {
+                    result = "You're on the latest version.";
+                }
+                return;
             }
 
             UpdateInfo? update = await _manager.CheckForUpdatesAsync();
@@ -111,6 +143,7 @@ internal sealed class Updater : IDisposable
         }
         finally
         {
+            LastResult = result;
             _busy.Release();
             Post(() => Status?.Invoke(null));
             if (manual && result is not null)
@@ -118,6 +151,42 @@ internal sealed class Updater : IDisposable
                 Post(() => Notice?.Invoke(result));
             }
         }
+    }
+
+    /// <summary>Asks GitHub for the latest release and remembers it if it is newer than this build.</summary>
+    private async Task CheckReleasePageAsync()
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("ShakeCursor-update-check");
+        using var response = await http.GetAsync(LatestReleaseApi);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        string? tag = json.RootElement.GetProperty("tag_name").GetString();
+        string? url = json.RootElement.GetProperty("html_url").GetString();
+        if (tag is null || url is null
+            || !Version.TryParse(tag.TrimStart('v'), out Version? latest)
+            || !Version.TryParse(CurrentVersionText(), out Version? current)
+            || latest <= current)
+        {
+            AvailableVersion = null;
+            AvailableUrl = null;
+            return;
+        }
+
+        AvailableVersion = latest.ToString();
+        AvailableUrl = url;
+        Diagnostics.Log($"updater: newer release {AvailableVersion} available");
+        Post(() => UpdateAvailable?.Invoke(AvailableVersion));
+    }
+
+    private static string CurrentVersionText()
+    {
+        string? info = System.Reflection.Assembly.GetEntryAssembly()?
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion;
+        return info?.Split('+')[0] ?? "0.0.0";
     }
 
     /// <summary>

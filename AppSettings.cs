@@ -15,6 +15,7 @@ public sealed class AppSettings
     public string FillColor { get; set; } = "#000000";    // arrow body
     public string OutlineColor { get; set; } = "#FFFFFF"; // arrow outline
     public bool Shadow { get; set; } = true;              // soft drop shadow
+    public bool AutoUpdate { get; set; } = true;          // check for and download updates in the background
     public bool FirstRunShown { get; set; }               // first-run balloon tip already shown
     public List<string> ExcludedApps { get; set; } = new(); // process names, e.g. "game.exe"
 
@@ -40,6 +41,7 @@ public sealed class AppSettings
         FillColor = other.FillColor;
         OutlineColor = other.OutlineColor;
         Shadow = other.Shadow;
+        AutoUpdate = other.AutoUpdate;
         FirstRunShown = other.FirstRunShown;
         StartWithWindows = other.StartWithWindows;
         ExcludedApps = new List<string>(other.ExcludedApps);
