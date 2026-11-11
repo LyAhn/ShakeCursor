@@ -54,7 +54,7 @@ jobs:
           vpk pack --packId ShakeCursor --packTitle ShakeCursor
           --packVersion ${{ steps.version.outputs.value }}
           --packDir artifacts/ShakeCursor --mainExe ShakeCursor.exe
-          --icon Assets/ShakeCursor.ico
+          --icon Assets/ShakeCursor.ico --shortcuts StartMenuRoot
 
       - name: Publish release
         shell: pwsh

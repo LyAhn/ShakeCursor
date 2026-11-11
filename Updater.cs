@@ -31,6 +31,15 @@ internal sealed class Updater : IDisposable
     /// <summary>Raised on the UI thread when a new version has finished downloading.</summary>
     public event Action<string>? UpdateReady;
 
+    /// <summary>
+    /// Live status for the menu and tooltip ("Checking...", "Downloading 1.0.4 - 37%").
+    /// Null means the check finished and the UI should show its idle state.
+    /// </summary>
+    public event Action<string?>? Status;
+
+    /// <summary>A one-off message worth a balloon tip; only raised for manual checks.</summary>
+    public event Action<string>? Notice;
+
     public void Start()
     {
         if (!IsInstalled)
@@ -41,54 +50,73 @@ internal sealed class Updater : IDisposable
 
         _pending = _manager.UpdatePendingRestart;
         _timer = new System.Threading.Timer(
-            _ => _ = CheckAsync(), null, FirstCheckDelay, CheckInterval);
+            _ => _ = CheckAsync(manual: false), null, FirstCheckDelay, CheckInterval);
     }
 
+    private void Post(Action action) => _ui?.Post(_ => action(), null);
+
     /// <summary>
-    /// Looks for an update and downloads it. Returns a short status line for
-    /// manual checks; background checks ignore it.
+    /// Looks for an update and downloads it, reporting progress through
+    /// <see cref="Status"/>. A manual check also says what happened via
+    /// <see cref="Notice"/>, so it never looks like nothing is going on.
     /// </summary>
-    public async Task<string> CheckAsync()
+    public async Task CheckAsync(bool manual)
     {
-        if (!IsInstalled)
+        if (!IsInstalled || _pending is not null || !await _busy.WaitAsync(0))
         {
-            return "Updates are only available in the installed version.";
-        }
-        if (!await _busy.WaitAsync(0))
-        {
-            return "Already checking for updates.";
+            return;
         }
 
+        string? result = null;
         try
         {
-            if (_pending is not null)
+            Post(() => Status?.Invoke("Checking for updates..."));
+            if (manual)
             {
-                return $"Version {_pending.Version} is ready. Restart to update.";
+                Post(() => Notice?.Invoke("Checking for updates..."));
             }
 
             UpdateInfo? update = await _manager.CheckForUpdatesAsync();
             if (update is null)
             {
-                return "You're on the latest version.";
+                result = "You're on the latest version.";
+                return;
             }
 
-            Diagnostics.Log($"updater: downloading {update.TargetFullRelease.Version}");
-            await _manager.DownloadUpdatesAsync(update);
-            _pending = update.TargetFullRelease;
+            string version = update.TargetFullRelease.Version.ToString();
+            Diagnostics.Log($"updater: downloading {version}");
+            Post(() => Status?.Invoke($"Downloading {version}... 0%"));
+            if (manual)
+            {
+                Post(() => Notice?.Invoke($"Version {version} found. Downloading..."));
+            }
 
-            string version = _pending.Version.ToString();
-            _ui?.Post(_ => UpdateReady?.Invoke(version), null);
-            return $"Version {version} is ready. Restart to update.";
+            int lastPercent = -1;
+            await _manager.DownloadUpdatesAsync(update, percent =>
+            {
+                if (percent != lastPercent)
+                {
+                    lastPercent = percent;
+                    Post(() => Status?.Invoke($"Downloading {version}... {percent}%"));
+                }
+            });
+            _pending = update.TargetFullRelease;
+            Post(() => UpdateReady?.Invoke(version));
         }
         catch (Exception ex)
         {
             // Offline, rate-limited or a bad feed: try again at the next interval.
             Diagnostics.Log("updater: check failed: " + ex.Message);
-            return "Couldn't check for updates.";
+            result = "Couldn't check for updates. Try again later.";
         }
         finally
         {
             _busy.Release();
+            Post(() => Status?.Invoke(null));
+            if (manual && result is not null)
+            {
+                Post(() => Notice?.Invoke(result));
+            }
         }
     }
 

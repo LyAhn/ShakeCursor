@@ -42,9 +42,12 @@ cursor is a vector shape that scales smoothly and stays crisp at any size.
 
 Grab `ShakeCursor-win-Setup.exe` from
 [Releases](https://github.com/LyAhn/ShakeCursor/releases) and run it. It installs
-per user (no admin prompt), is self-contained (no runtime install) and needs
+per user (no admin prompt) into `%LOCALAPPDATA%\ShakeCursor`, adds a Start menu
+shortcut (no desktop shortcut), is self-contained (no runtime install) and needs
 Windows 10 1809 or later on x64. The build is unsigned, so SmartScreen may warn
 on first run.
+
+To install somewhere else, run `ShakeCursor-win-Setup.exe --installto <folder>`.
 
 An installed copy checks for updates in the background, downloads them, and
 offers a **Restart to update** item in the tray menu (plus a balloon tip). You

@@ -126,6 +126,8 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             NativeMethods.WINEVENT_OUTOFCONTEXT);
 
         _updater.UpdateReady += OnUpdateReady;
+        _updater.Status += OnUpdateStatus;
+        _updater.Notice += OnUpdateNotice;
         _updater.Start();
         RefreshUpdateItem();
 
@@ -188,6 +190,29 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             ToolTipIcon.Info);
     }
 
+    private void OnUpdateStatus(string? status)
+    {
+        if (status is null)
+        {
+            _updateItem.Enabled = true;
+            _tray.Text = "ShakeCursor";
+            RefreshUpdateItem();
+            return;
+        }
+
+        // The menu item doubles as a progress readout; NotifyIcon.Text caps at 63 chars.
+        _updateItem.Enabled = false;
+        _updateItem.Text = status;
+        string tip = "ShakeCursor - " + status;
+        _tray.Text = tip.Length <= 63 ? tip : tip[..63];
+    }
+
+    private void OnUpdateNotice(string text)
+    {
+        _updateBalloonShown = false;
+        _tray.ShowBalloonTip(5000, "ShakeCursor", text, ToolTipIcon.Info);
+    }
+
     private async void OnUpdateItemClicked()
     {
         if (_updater.PendingVersion is not null)
@@ -196,21 +221,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             return;
         }
 
-        _updateItem.Enabled = false;
-        try
-        {
-            string status = await _updater.CheckAsync();
-            _updateBalloonShown = false;
-            if (_updater.PendingVersion is null)
-            {
-                _tray.ShowBalloonTip(5000, "ShakeCursor", status, ToolTipIcon.Info);
-            }
-            RefreshUpdateItem();
-        }
-        finally
-        {
-            _updateItem.Enabled = true;
-        }
+        await _updater.CheckAsync(manual: true);
     }
 
     /// <summary>Hands off to the updater, then exits through the normal path (cursor restored).</summary>
