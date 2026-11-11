@@ -67,7 +67,7 @@
                         <Canvas x:Name="PreviewCanvas" Width="176" Height="176">
                             <Canvas x:Name="ArrowHost">
                                 <Canvas.RenderTransform>
-                                    <ScaleTransform x:Name="ArrowScale" ScaleX="1" ScaleY="1" CenterX="8.75" CenterY="15" />
+                                    <ScaleTransform x:Name="ArrowScale" ScaleX="1" ScaleY="1" CenterX="5.6" CenterY="9.6" />
                                 </Canvas.RenderTransform>
                                 <shapes:Polygon x:Name="ArrowShadow" Fill="#46000000" />
                                 <shapes:Polygon x:Name="ArrowOutline" Stroke="White" StrokeThickness="4" StrokeLineJoin="Round" />
@@ -95,7 +95,7 @@
                             </controls:SettingsCard>
                             <controls:SettingsCard Header="When shaking">
                                 <StackPanel Orientation="Horizontal" Spacing="16">
-                                    <Slider x:Name="MaxSlider" Width="260" Minimum="1.5" Maximum="4" StepFrequency="0.1" VerticalAlignment="Center" />
+                                    <Slider x:Name="MaxSlider" Width="260" Minimum="1.5" Maximum="6" StepFrequency="0.1" VerticalAlignment="Center" />
                                     <TextBlock x:Name="MaxValue" Width="56" TextAlignment="Right" VerticalAlignment="Center"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </StackPanel>

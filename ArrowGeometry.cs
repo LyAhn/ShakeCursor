@@ -18,6 +18,10 @@ internal static class ArrowGeometry
         (13.9f, 15.9f),
     };
 
-    /// <summary>Base size in device-independent px per unit at scale 1.0.</summary>
-    public const float UnitsToPx = 1.25f;
+    /// <summary>
+    /// Device-independent px per unit at scale 1.0. Calibrated so a 1.0x arrow
+    /// (about 19 px tall) matches the glyph of the standard Windows arrow, which
+    /// sits inside a 32 px cursor bitmap.
+    /// </summary>
+    public const float UnitsToPx = 0.8f;
 }

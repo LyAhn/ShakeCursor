@@ -27,8 +27,8 @@ public sealed partial class MainWindow : Window
     // The arrow scales about its own centre (see ScaleTransform in the XAML),
     // so park that centre in the middle of the 176 px round stage.
     private const double StageCentre = 88;
-    private const double ArrowCentreX = 8.75; // 14 units * 1.25 / 2
-    private const double ArrowCentreY = 15;   // 24 units * 1.25 / 2
+    private const double ArrowCentreX = 5.6; // 14 units * 0.8 / 2
+    private const double ArrowCentreY = 9.6; // 24 units * 0.8 / 2
 
     private readonly ShakeDetector _preview = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();

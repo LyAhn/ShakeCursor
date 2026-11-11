@@ -9,7 +9,7 @@ namespace ShakeCursor;
 public sealed class AppSettings
 {
     public float RestScale { get; set; } = 1.0f;      // cursor size at rest (×)
-    public float MaxScale { get; set; } = 2.6f;       // cursor size when fully enlarged (×)
+    public float MaxScale { get; set; } = 4.0f;       // cursor size when fully enlarged (×)
     public float Sensitivity { get; set; } = 1.0f;    // shake sensitivity multiplier
     public float LingerSeconds { get; set; } = 1.75f; // enlarged hold time after stopping (s)
     public string FillColor { get; set; } = "#000000";    // arrow body
@@ -24,6 +24,15 @@ public sealed class AppSettings
     /// it to the registry. Null = never chosen (leave the registry alone).
     /// </summary>
     public bool? StartWithWindows { get; set; }
+
+    /// <summary>
+    /// Which arrow-size calibration the scales were saved under. Files without it
+    /// predate the 1.0.5 recalibration, where 1.0x was about 1.56x larger.
+    /// </summary>
+    public int? SizeCalibration { get; set; }
+
+    private const int CurrentSizeCalibration = 2;
+    private const float OldToNewScale = 1.25f / 0.8f;
 
     /// <summary>Normalises a process or file name to the stored "name.exe" form.</summary>
     public static string NormalizeApp(string name)
@@ -84,6 +93,16 @@ public sealed class AppSettings
                 }
                 string json = File.ReadAllText(FilePath);
                 var settings = JsonSerializer.Deserialize<AppSettings>(json);
+                if (settings is { SizeCalibration: null })
+                {
+                    // Keep the cursor looking the same after the recalibration.
+                    settings.RestScale *= OldToNewScale;
+                    settings.MaxScale *= OldToNewScale;
+                }
+                if (settings is not null)
+                {
+                    settings.SizeCalibration = CurrentSizeCalibration;
+                }
                 settings?.Clamp();
                 return settings;
             }
@@ -110,6 +129,7 @@ public sealed class AppSettings
     {
         try
         {
+            SizeCalibration = CurrentSizeCalibration;
             Clamp();
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             string json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
@@ -128,7 +148,7 @@ public sealed class AppSettings
     private void Clamp()
     {
         RestScale = Math.Clamp(RestScale, 0.5f, 2.0f);
-        MaxScale = Math.Clamp(MaxScale, 1.5f, 4.0f);
+        MaxScale = Math.Clamp(MaxScale, 1.5f, 6.0f);
         Sensitivity = Math.Clamp(Sensitivity, 0.5f, 2.0f);
         LingerSeconds = Math.Clamp(LingerSeconds, 0.25f, 3.0f);
         ExcludedApps = (ExcludedApps ?? new List<string>())

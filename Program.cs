@@ -451,10 +451,11 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
     }
 
     /// <summary>
-    /// The settings app is a large self-contained WinUI app. Its first launch
-    /// after a boot or an update is slow because Windows has to read and
-    /// virus-scan all its files cold, so read them once in the background at
-    /// low priority; the real launch then hits the cache.
+    /// The settings app is a large self-contained WinUI app (~200 MB). Its first
+    /// launch after a boot, an update or an antivirus definition update is slow
+    /// (10 s measured) because Windows has to read and scan all its files cold.
+    /// So, shortly after startup and at background I/O priority, read every file
+    /// and then start the app once, hidden, so the real launch hits warm caches.
     /// </summary>
     private static void WarmSettingsFiles()
     {
@@ -468,7 +469,8 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         {
             try
             {
-                Thread.Sleep(TimeSpan.FromSeconds(15)); // stay out of the way of startup
+                Thread.Sleep(TimeSpan.FromSeconds(4)); // let the tray icon and cursor settle first
+                SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
                 var buffer = new byte[1 << 20];
                 foreach (string file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 {
@@ -479,9 +481,24 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
                     {
                     }
                 }
-                Diagnostics.Log("settings files warmed");
+                SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
+
+                string exe = Path.Combine(dir, "ShakeCursor.Settings.exe");
+                if (File.Exists(exe))
+                {
+                    using var warm = System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(exe, "--warm")
+                        {
+                            UseShellExecute = false,
+                            CreateNoWindow = true,
+                            WorkingDirectory = dir,
+                        });
+                    warm?.WaitForExit(20000);
+                }
+                Diagnostics.Log("settings app warmed");
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                          or System.ComponentModel.Win32Exception)
             {
                 // Best effort only.
             }

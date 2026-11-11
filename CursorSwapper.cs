@@ -9,12 +9,13 @@ namespace ShakeCursor;
 
 /// <summary>
 /// Replaces the system arrow (OCR_NORMAL) with our own vector-rendered arrow,
-/// re-rendered at the current shake size.
+/// re-rendered at the current shake size. The other pointer shapes (I-beam,
+/// hand, resize...) are the user's own cursor-scheme files, loaded at the
+/// matching size (the files carry crisp images from 32 to 128 px).
 ///
 /// This is a REAL system cursor, not an overlay window, so Windows draws it on
 /// top of everything — taskbar, Window Peek, Alt+Tab, UAC — with no z-order
-/// fighting and no flicker. Other cursors (I-beam, resize, hand...) are left
-/// alone and keep rendering natively.
+/// fighting and no flicker. Animated cursors (busy/wait) are left alone.
 ///
 /// The swap can be undone and redone at runtime (<see cref="Suspend"/> /
 /// <see cref="Resume"/>) so excluded apps get the real system arrow.
@@ -26,8 +27,34 @@ internal sealed class CursorSwapper : IDisposable
     private const float ShadowDx = 2.5f;
     private const float ShadowDy = 3.5f;
 
-    // Building a cursor costs ~1 ms; cap how often the animation rebuilds it.
-    private const double MinRebuildSeconds = 1.0 / 60.0;
+    // Building the arrow costs ~1.5 ms; cap how often the animation rebuilds it.
+    private const double MinRebuildSeconds = 1.0 / 120.0;
+    // The eleven other cursors cost about 3 ms to swap, so they update less often.
+    private const double MinExtrasSeconds = 1.0 / 40.0;
+
+    // The standard (100% DPI) cursor size, and the step the other cursors snap to.
+    private const float BaseCursorPx = 32f;
+    private const int ExtraSizeStep = 4;
+
+    // Registry value in HKCU\Control Panel\Cursors -> OCR id of the slot it fills.
+    private static readonly (string Value, uint Id)[] ExtraSlots =
+    {
+        ("IBeam", 32513), ("Crosshair", 32515), ("UpArrow", 32516),
+        ("SizeNWSE", 32642), ("SizeNESW", 32643), ("SizeWE", 32644), ("SizeNS", 32645),
+        ("SizeAll", 32646), ("No", 32648), ("Hand", 32649), ("Help", 32651),
+    };
+
+    private readonly float _dpiScale;
+    private readonly List<(uint Id, string Path)> _extras = new();
+    private readonly Dictionary<(uint Id, int Px), IntPtr> _extraCache = new();
+    private int _appliedExtraPx = -1;
+
+    // Rebuild cost, logged with the telemetry so smoothness can be tuned on data.
+    private int _rebuildCount;
+    private double _rebuildTotalMs;
+    private double _rebuildMaxMs;
+    private double _loadMs;
+    private double _extraMs;
 
     private readonly object _gate = new();
     private readonly float _unitsToPx; // px per arrow unit at scale 1.0 (DPI aware)
@@ -40,14 +67,16 @@ internal sealed class CursorSwapper : IDisposable
 
     private float _progress;
     private int _appliedHeightPx = -1;
-    private bool _dirty = true;
     private bool _suspended;
     private bool _configured;
     private long _lastRebuildTicks;
+    private long _lastExtrasTicks;
 
     public CursorSwapper(float dpiScale)
     {
+        _dpiScale = dpiScale;
         _unitsToPx = ArrowGeometry.UnitsToPx * dpiScale;
+        ResolveExtraCursors();
 
         // A previous instance may have been hard-killed with an enlarged arrow
         // still installed; start from the real system cursors.
@@ -65,9 +94,11 @@ internal sealed class CursorSwapper : IDisposable
             _outlineArgb = outline.ToArgb();
             _shadow = shadow;
             _configured = true;
-            _dirty = true;
-            Rebuild();
+            _appliedHeightPx = -1;
+            _appliedExtraPx = -1;
+            Apply(arrow: true, extras: true);
         }
+        PreloadExtras();
     }
 
     /// <summary>
@@ -84,19 +115,21 @@ internal sealed class CursorSwapper : IDisposable
                 return;
             }
 
-            int heightPx = HeightPxFor(_progress);
-            if (!_dirty && heightPx == _appliedHeightPx)
+            bool arrowStale = HeightPxFor(_progress) != _appliedHeightPx;
+            bool extrasStale = ExtraPxFor(_progress) != _appliedExtraPx;
+            if (!arrowStale && !extrasStale)
             {
                 return;
             }
 
+            // Throttled parts are simply caught up by a later tick.
             long now = Stopwatch.GetTimestamp();
-            if ((now - _lastRebuildTicks) / (double)Stopwatch.Frequency < MinRebuildSeconds)
+            bool doArrow = arrowStale && Seconds(now - _lastRebuildTicks) >= MinRebuildSeconds;
+            bool doExtras = extrasStale && Seconds(now - _lastExtrasTicks) >= MinExtrasSeconds;
+            if (doArrow || doExtras)
             {
-                return; // the next tick will catch up
+                Apply(doArrow, doExtras);
             }
-
-            Rebuild();
         }
     }
 
@@ -116,10 +149,11 @@ internal sealed class CursorSwapper : IDisposable
         lock (_gate)
         {
             _suspended = false;
-            _dirty = true;
+            _appliedHeightPx = -1;
+            _appliedExtraPx = -1;
             if (_configured)
             {
-                Rebuild();
+                Apply(arrow: true, extras: true);
             }
         }
     }
@@ -132,49 +166,208 @@ internal sealed class CursorSwapper : IDisposable
     public void Restore()
     {
         SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, 0);
-        _dirty = true;
         _appliedHeightPx = -1;
+        _appliedExtraPx = -1;
     }
 
-    public void Dispose() => Restore();
+    public void Dispose()
+    {
+        Restore();
+        foreach (IntPtr cursor in _extraCache.Values)
+        {
+            DestroyIcon(cursor);
+        }
+        _extraCache.Clear();
+    }
+
+    /// <summary>Rebuild count and cost since the last call, for the telemetry log.</summary>
+    public string TakeRebuildStats()
+    {
+        lock (_gate)
+        {
+            string text = _rebuildCount == 0
+                ? "rebuilds=0"
+                : $"rebuilds={_rebuildCount} avgMs={_rebuildTotalMs / _rebuildCount:F2} maxMs={_rebuildMaxMs:F2} extraMs={_extraMs:F1} loadMs={_loadMs:F1}";
+            _rebuildCount = 0;
+            _rebuildTotalMs = 0;
+            _rebuildMaxMs = 0;
+            _loadMs = 0;
+            _extraMs = 0;
+            return text;
+        }
+    }
+
+    private void ResolveExtraCursors()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Control Panel\Cursors");
+            foreach (var (value, id) in ExtraSlots)
+            {
+                string? raw = key?.GetValue(value) as string;
+                string path = string.IsNullOrWhiteSpace(raw) ? "" : Environment.ExpandEnvironmentVariables(raw);
+                if (File.Exists(path))
+                {
+                    _extras.Add((id, path));
+                }
+            }
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            // No readable scheme: those cursors simply stay at their normal size.
+        }
+        Diagnostics.Log($"extra cursors resolved: {_extras.Count}/{ExtraSlots.Length}");
+    }
+
+    private int ExtraPxFor(float progress)
+    {
+        float px = BaseCursorPx * _dpiScale * ScaleFor(progress);
+        // The cursor files carry crisp images up to 128 px; beyond that they'd only be upscaled.
+        return Math.Clamp((int)MathF.Round(px / ExtraSizeStep) * ExtraSizeStep, 16, 128);
+    }
 
     private float ScaleFor(float progress) => _restScale + (_maxScale - _restScale) * progress;
 
     private int HeightPxFor(float progress) =>
         (int)MathF.Round(ArrowHeightUnits * _unitsToPx * ScaleFor(progress));
 
-    private void Rebuild()
+    private static double Seconds(long ticks) => ticks / (double)Stopwatch.Frequency;
+
+    /// <summary>Installs the arrow and/or the other cursors at the current size.</summary>
+    private void Apply(bool arrow, bool extras)
     {
         if (_suspended)
         {
             return;
         }
 
-        _lastRebuildTicks = Stopwatch.GetTimestamp();
-        float u = _unitsToPx * ScaleFor(_progress);
-
-        IntPtr cursor = BuildCursor(u);
-        if (cursor == IntPtr.Zero)
+        long started = Stopwatch.GetTimestamp();
+        if (arrow)
         {
-            Diagnostics.Log($"BuildCursor failed (error {Marshal.GetLastWin32Error()})");
-            return;
+            _lastRebuildTicks = started;
+            IntPtr cursor = BuildCursor(_unitsToPx * ScaleFor(_progress));
+            if (cursor == IntPtr.Zero)
+            {
+                Diagnostics.Log($"BuildCursor failed (error {Marshal.GetLastWin32Error()})");
+                return;
+            }
+
+            // SetSystemCursor takes ownership of (and destroys) the handle on success.
+            if (!SetSystemCursor(cursor, OCR_NORMAL))
+            {
+                Diagnostics.Log($"SetSystemCursor failed (error {Marshal.GetLastWin32Error()})");
+                DestroyIcon(cursor);
+                return;
+            }
+            _appliedHeightPx = HeightPxFor(_progress);
         }
 
-        // SetSystemCursor takes ownership of (and destroys) the handle on success.
-        if (!SetSystemCursor(cursor, OCR_NORMAL))
+        if (extras)
         {
-            Diagnostics.Log($"SetSystemCursor failed (error {Marshal.GetLastWin32Error()})");
-            DestroyIcon(cursor);
-            return;
+            _lastExtrasTicks = started;
+            RebuildExtras();
         }
-
-        _dirty = false;
-        _appliedHeightPx = HeightPxFor(_progress);
 
         // Windows only re-reads the cursor image on the next mouse message, so a
         // stationary pointer would keep the old size while it shrinks back. A
         // zero-distance move makes it refresh.
         mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, UIntPtr.Zero);
+
+        double ms = Seconds(Stopwatch.GetTimestamp() - started) * 1000.0;
+        _rebuildCount++;
+        _rebuildTotalMs += ms;
+        _rebuildMaxMs = Math.Max(_rebuildMaxMs, ms);
+    }
+
+    /// <summary>
+    /// Loads every cursor at every size it can be shown at, off the poll thread,
+    /// so the animation only ever copies a cached handle (a cold LoadImage from
+    /// disk costs about 1 ms per cursor).
+    /// </summary>
+    private void PreloadExtras()
+    {
+        (uint Id, string Path)[] extras;
+        int from, to;
+        lock (_gate)
+        {
+            extras = _extras.ToArray();
+            from = ExtraPxFor(0f);
+            to = ExtraPxFor(1f);
+        }
+
+        new Thread(() =>
+        {
+            for (int px = from; px <= to; px += ExtraSizeStep)
+            {
+                foreach (var (id, path) in extras)
+                {
+                    lock (_gate)
+                    {
+                        if (_extraCache.ContainsKey((id, px)))
+                        {
+                            continue;
+                        }
+                    }
+
+                    IntPtr loaded = LoadImage(IntPtr.Zero, path, IMAGE_CURSOR, px, px, LR_LOADFROMFILE);
+                    if (loaded == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    lock (_gate)
+                    {
+                        if (!_extraCache.TryAdd((id, px), loaded))
+                        {
+                            DestroyIcon(loaded);
+                        }
+                    }
+                }
+            }
+        })
+        {
+            Name = "CursorPreload",
+            IsBackground = true,
+            Priority = ThreadPriority.BelowNormal,
+        }.Start();
+    }
+
+    /// <summary>Loads the user's scheme cursors at the current size and installs them.</summary>
+    private void RebuildExtras()
+    {
+        int px = ExtraPxFor(_progress);
+        if (px == _appliedExtraPx)
+        {
+            return;
+        }
+        _appliedExtraPx = px;
+        long t0 = Stopwatch.GetTimestamp();
+
+        for (int i = _extras.Count - 1; i >= 0; i--)
+        {
+            var (id, path) = _extras[i];
+            if (!_extraCache.TryGetValue((id, px), out IntPtr cached))
+            {
+                long l0 = Stopwatch.GetTimestamp();
+                cached = LoadImage(IntPtr.Zero, path, IMAGE_CURSOR, px, px, LR_LOADFROMFILE);
+                _loadMs += (Stopwatch.GetTimestamp() - l0) * 1000.0 / Stopwatch.Frequency;
+                if (cached == IntPtr.Zero)
+                {
+                    Diagnostics.Log($"could not load {path} at {px}px (error {Marshal.GetLastWin32Error()})");
+                    _extras.RemoveAt(i); // leave this one native from now on
+                    continue;
+                }
+                _extraCache.TryAdd((id, px), cached);
+            }
+
+            // SetSystemCursor consumes the handle it is given, so hand it a copy.
+            IntPtr copy = CopyIcon(cached);
+            if (copy != IntPtr.Zero && !SetSystemCursor(copy, id))
+            {
+                DestroyIcon(copy);
+            }
+        }
+        _extraMs += (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
     }
 
     /// <summary>Renders the arrow at <paramref name="u"/> px per unit into a cursor handle.</summary>

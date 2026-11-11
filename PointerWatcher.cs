@@ -53,6 +53,22 @@ internal sealed class PointerWatcher
         // Ask Windows for 1 ms timer resolution so Thread.Sleep(1) is ~1 ms.
         timeBeginPeriod(1);
 
+        // Windows 11 ignores that request for a process with no visible window
+        // (this one is tray-only), which drops the loop to ~64 Hz and makes both
+        // shake detection and the growth animation coarse. Opt out of that
+        // throttling (and of EcoQoS) so the request is honoured.
+        var throttling = new PROCESS_POWER_THROTTLING_STATE
+        {
+            Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+            ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION,
+            StateMask = 0,
+        };
+        if (!SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, ref throttling,
+                (uint)System.Runtime.InteropServices.Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>()))
+        {
+            Diagnostics.Log("SetProcessInformation failed: " + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+        }
+
         long lastTimestamp = Stopwatch.GetTimestamp();
         long lastFrequency = Stopwatch.Frequency;
 
@@ -91,7 +107,8 @@ internal sealed class PointerWatcher
                         $"telemetry: maxSpeed={Interlocked.Exchange(ref _maxSpeed, 0):F0} " +
                         $"reversals={_shaker.ReversalCount - _lastReversalCount} " +
                         $"intensity={_shaker.CurrentIntensity:F0} " +
-                        $"progress={_shaker.CurrentProgress:F2} dtMs={dt * 1000:F1}");
+                        $"progress={_shaker.CurrentProgress:F2} dtMs={dt * 1000:F1} " +
+                        _swapper.TakeRebuildStats());
                     _lastReversalCount = _shaker.ReversalCount;
                 }
                 else if (_shaker.LastSpeed > _maxSpeed)

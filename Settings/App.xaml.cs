@@ -27,6 +27,19 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Started in the background by the tray app purely so Windows loads (and
+        // virus-scans) this app's files ahead of the first real launch. It takes
+        // no single-instance lock and shows nothing, so a real launch is unaffected.
+        if (Environment.GetCommandLineArgs().Contains("--warm"))
+        {
+            var timer = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().CreateTimer();
+            timer.Interval = TimeSpan.FromMilliseconds(1500);
+            timer.IsRepeating = false;
+            timer.Tick += (_, _) => Environment.Exit(0);
+            timer.Start();
+            return;
+        }
+
         _singleInstance = new Mutex(true, @"Local\ShakeCursor.Settings.SingleInstance", out bool isNew);
         if (!isNew)
         {

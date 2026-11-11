@@ -82,7 +82,7 @@ Changes apply live and are saved to `%APPDATA%\ShakeCursor\settings.json`
 | Page | Setting | Range |
 |---|---|---|
 | Size | At rest | 0.5–2.0× |
-| Size | When shaking | 1.5–4.0× |
+| Size | When shaking | 1.5–6.0× |
 | Shake | Sensitivity | 0.5–2.0× |
 | Shake | Hold time | 0.25–3.0 s |
 | Appearance | Fill, Outline | any colour (native colour picker, `#RRGGBB`) |

@@ -61,6 +61,15 @@ internal static class NativeMethods
     [DllImport("gdi32.dll", SetLastError = true)]
     public static extern IntPtr CreateBitmap(int nWidth, int nHeight, uint cPlanes, uint cBitsPerPel, IntPtr lpvBits);
 
+    public const uint IMAGE_CURSOR = 2;
+    public const uint LR_LOADFROMFILE = 0x00000010;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr LoadImage(IntPtr hInst, string name, uint type, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr CopyIcon(IntPtr hIcon);
+
     public const uint MOUSEEVENTF_MOVE = 0x0001;
 
     [DllImport("user32.dll")]
@@ -117,6 +126,35 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern uint GetDpiForSystem();
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_POWER_THROTTLING_STATE
+    {
+        public uint Version;
+        public uint ControlMask;
+        public uint StateMask;
+    }
+
+    public const int ProcessPowerThrottling = 4;
+    public const uint PROCESS_POWER_THROTTLING_CURRENT_VERSION = 1;
+    public const uint PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 0x1;
+    public const uint PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION = 0x4;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetProcessInformation(
+        IntPtr hProcess, int informationClass, ref PROCESS_POWER_THROTTLING_STATE information, uint size);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetCurrentProcess();
+
+    public const int THREAD_MODE_BACKGROUND_BEGIN = 0x00010000;
+    public const int THREAD_MODE_BACKGROUND_END = 0x00020000;
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetCurrentThread();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetThreadPriority(IntPtr hThread, int nPriority);
 
     [DllImport("winmm.dll")]
     public static extern uint timeBeginPeriod(uint msPeriod);
