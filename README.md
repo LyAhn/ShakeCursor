@@ -40,14 +40,21 @@ cursor is a vector shape that scales smoothly and stays crisp at any size.
 
 ## Download
 
-Grab the latest `ShakeCursor-vX.Y.Z-win-x64.zip` from
-[Releases](https://github.com/LyAhn/ShakeCursor/releases), unzip it anywhere and
-run `ShakeCursor.exe`. It is self-contained (no runtime install) and needs
+Grab `ShakeCursor-win-Setup.exe` from
+[Releases](https://github.com/LyAhn/ShakeCursor/releases) and run it. It installs
+per user (no admin prompt), is self-contained (no runtime install) and needs
 Windows 10 1809 or later on x64. The build is unsigned, so SmartScreen may warn
-on first run. A `.sha256` file is published alongside each zip.
+on first run.
 
-Releases are cut by pushing a version tag (`git tag v1.0.1 && git push origin v1.0.1`);
-the **Release** workflow builds and publishes the zip.
+An installed copy checks for updates in the background, downloads them, and
+offers a **Restart to update** item in the tray menu (plus a balloon tip). You
+can also use **Check for updates** there. A portable
+`ShakeCursor-win-Portable.zip` is attached to each release too; it does not
+update itself. `.sha256` files are published for both downloads.
+
+Releases are cut by pushing a version tag (`git tag -m v1.0.2 v1.0.2 && git push origin v1.0.2`);
+the **Release** workflow builds the installer and update packages with
+[Velopack](https://velopack.io) and publishes them.
 
 ## Building from source
 

@@ -5,7 +5,7 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>ShakeCursor.Settings</RootNamespace>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <AssemblyName>ShakeCursor.Settings</AssemblyName>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>

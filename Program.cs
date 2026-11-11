@@ -1,3 +1,4 @@
+using Velopack;
 using static ShakeCursor.NativeMethods;
 
 namespace ShakeCursor;
@@ -7,6 +8,12 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Must run first: handles the installer's install/update/uninstall
+        // callbacks and exits immediately when it is one.
+        VelopackApp.Build()
+            .OnBeforeUninstallFastCallback(_ => Autostart.Set(false))
+            .Run();
+
         if (args.Length >= 2 && args[0] == "--watchdog" && int.TryParse(args[1], out int parentPid))
         {
             return Watchdog.Run(parentPid);
@@ -39,6 +46,9 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
     private readonly ShakeDetector _shaker = new();
     private readonly PointerWatcher _watcher;
     private readonly NotifyIcon _tray;
+    private readonly Updater _updater;
+    private readonly ToolStripMenuItem _updateItem;
+    private bool _updateBalloonShown;
     private readonly EventWaitHandle? _cleanExit;
     private readonly System.Windows.Forms.Timer _reloadDebounce = new() { Interval = 150 };
     private readonly FileSystemWatcher _settingsFile;
@@ -77,6 +87,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
         }
         var ui = SynchronizationContext.Current;
+        _updater = new Updater(); // captures the UI sync context set above
         FileSystemEventHandler onChange = (_, _) => ui?.Post(_ => { _reloadDebounce.Stop(); _reloadDebounce.Start(); }, null);
         _settingsFile.Changed += onChange;
         _settingsFile.Created += onChange;
@@ -94,6 +105,8 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Settings...", (System.Drawing.Image?)null, (_, _) => ShowSettings());
+        _updateItem = new ToolStripMenuItem("Check for updates", null, (_, _) => OnUpdateItemClicked());
+        menu.Items.Add(_updateItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit ShakeCursor", (System.Drawing.Image?)null, (_, _) => ExitThread());
 
@@ -112,7 +125,21 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             IntPtr.Zero, _foregroundProc, 0, 0,
             NativeMethods.WINEVENT_OUTOFCONTEXT);
 
-        _tray.BalloonTipClicked += (_, _) => ShowSettings();
+        _updater.UpdateReady += OnUpdateReady;
+        _updater.Start();
+        RefreshUpdateItem();
+
+        _tray.BalloonTipClicked += (_, _) =>
+        {
+            if (_updateBalloonShown)
+            {
+                ApplyUpdateAndExit();
+            }
+            else
+            {
+                ShowSettings();
+            }
+        };
         _tray.MouseDoubleClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left)
@@ -138,6 +165,59 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         if (openSettings)
         {
             ShowSettings();
+        }
+    }
+
+    private void RefreshUpdateItem()
+    {
+        _updateItem.Visible = _updater.IsInstalled;
+        _updateItem.Text = _updater.PendingVersion is string v
+            ? $"Restart to update to {v}"
+            : "Check for updates";
+    }
+
+    private void OnUpdateReady(string version)
+    {
+        RefreshUpdateItem();
+        _updateBalloonShown = true;
+        _tray.ShowBalloonTip(
+            10000,
+            "ShakeCursor update ready",
+            $"Version {version} is downloaded. Click here to restart and update.",
+            ToolTipIcon.Info);
+    }
+
+    private async void OnUpdateItemClicked()
+    {
+        if (_updater.PendingVersion is not null)
+        {
+            ApplyUpdateAndExit();
+            return;
+        }
+
+        _updateItem.Enabled = false;
+        try
+        {
+            string status = await _updater.CheckAsync();
+            _updateBalloonShown = false;
+            if (_updater.PendingVersion is null)
+            {
+                _tray.ShowBalloonTip(5000, "ShakeCursor", status, ToolTipIcon.Info);
+            }
+            RefreshUpdateItem();
+        }
+        finally
+        {
+            _updateItem.Enabled = true;
+        }
+    }
+
+    /// <summary>Hands off to the updater, then exits through the normal path (cursor restored).</summary>
+    private void ApplyUpdateAndExit()
+    {
+        if (_updater.ApplyOnExit())
+        {
+            ExitThread();
         }
     }
 
@@ -251,7 +331,10 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         {
             try
             {
-                process.CloseMainWindow();
+                if (process.CloseMainWindow() && !process.WaitForExit(3000))
+                {
+                    process.Kill();
+                }
             }
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
@@ -266,6 +349,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        _updater.Dispose();
         _settingsFile.Dispose();
         _watcher.Stop();
         _swapper.Restore();

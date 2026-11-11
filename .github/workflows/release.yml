@@ -38,20 +38,41 @@ jobs:
           -p:Version=${{ steps.version.outputs.value }}
           -o artifacts/ShakeCursor/Settings
 
-      - name: Package
+      - name: Install Velopack CLI
+        run: dotnet tool install -g vpk
+
+      # Pulls earlier releases so vpk can build small delta updates. The first
+      # Velopack release has nothing to download, which is fine.
+      - name: Download previous releases
         shell: pwsh
         run: |
-          $name = "ShakeCursor-${{ github.ref_name }}-win-x64"
-          Compress-Archive -Path artifacts/ShakeCursor/* -DestinationPath "artifacts/$name.zip"
-          $hash = (Get-FileHash "artifacts/$name.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $name.zip" | Out-File "artifacts/$name.zip.sha256" -Encoding ascii
+          vpk download github --repoUrl https://github.com/${{ github.repository }} --token ${{ secrets.GITHUB_TOKEN }}
+          if ($LASTEXITCODE -ne 0) { Write-Host "No previous Velopack release found."; $global:LASTEXITCODE = 0 }
+
+      - name: Pack installer and update packages
+        run: >
+          vpk pack --packId ShakeCursor --packTitle ShakeCursor
+          --packVersion ${{ steps.version.outputs.value }}
+          --packDir artifacts/ShakeCursor --mainExe ShakeCursor.exe
+          --icon Assets/ShakeCursor.ico
 
       - name: Publish release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >
-          gh release create "${{ github.ref_name }}" artifacts/*.zip artifacts/*.sha256
-          --title "ShakeCursor ${{ github.ref_name }}"
-          --generate-notes
-          --notes "Unzip anywhere and run **ShakeCursor.exe** (Windows 10 1809 or later, x64). Self-contained: no runtime install needed. The build is unsigned, so Windows SmartScreen may warn on first run."
+        run: |
+          vpk upload github --repoUrl https://github.com/${{ github.repository }} `
+            --token $env:GH_TOKEN --publish `
+            --releaseName "ShakeCursor ${{ github.ref_name }}" --tag ${{ github.ref_name }}
+
+          # Checksums for the files people download by hand.
+          Push-Location Releases
+          $files = Get-ChildItem "ShakeCursor-win-Setup.exe", "ShakeCursor-win-Portable.zip" -ErrorAction SilentlyContinue
+          foreach ($f in $files) {
+            $hash = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($f.Name)" | Out-File "$($f.Name).sha256" -Encoding ascii
+          }
+          Pop-Location
+          gh release upload "${{ github.ref_name }}" (Get-ChildItem Releases/*.sha256).FullName --clobber
+
+          gh release edit "${{ github.ref_name }}" --notes "Run **ShakeCursor-win-Setup.exe** to install (Windows 10 1809 or later, x64, no runtime needed). Installed copies update themselves. A portable zip is also attached; it does not auto-update. The build is unsigned, so Windows SmartScreen may warn on first run."
