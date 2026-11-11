@@ -57,18 +57,17 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <!-- Live preview -->
-                <Border
-                    Height="190"
-                    CornerRadius="8"
-                    BorderThickness="1"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                    <Grid>
-                        <Canvas x:Name="PreviewCanvas">
+                <!-- Live preview: a round stage the arrow grows from its centre inside -->
+                <Grid Height="190" HorizontalAlignment="Center">
+                    <Grid Width="176" Height="176" VerticalAlignment="Center">
+                        <Ellipse
+                            StrokeThickness="1"
+                            Stroke="{ThemeResource CardStrokeColorDefaultBrush}"
+                            Fill="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                        <Canvas x:Name="PreviewCanvas" Width="176" Height="176">
                             <Canvas x:Name="ArrowHost">
                                 <Canvas.RenderTransform>
-                                    <ScaleTransform x:Name="ArrowScale" ScaleX="1" ScaleY="1" />
+                                    <ScaleTransform x:Name="ArrowScale" ScaleX="1" ScaleY="1" CenterX="8.75" CenterY="15" />
                                 </Canvas.RenderTransform>
                                 <shapes:Polygon x:Name="ArrowShadow" Fill="#46000000" />
                                 <shapes:Polygon x:Name="ArrowOutline" Stroke="White" StrokeThickness="4" StrokeLineJoin="Round" />
@@ -76,11 +75,11 @@
                             </Canvas>
                         </Canvas>
                         <TextBlock x:Name="ScaleReadout"
-                                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                   Margin="0,0,16,12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                   Margin="0,0,0,14"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     </Grid>
-                </Border>
+                </Grid>
 
                 <ScrollViewer Grid.Row="1">
                     <Grid>

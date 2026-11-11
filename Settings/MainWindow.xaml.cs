@@ -24,8 +24,11 @@ public sealed partial class MainWindow : Window
 {
     public const string WindowTitle = "ShakeCursor Settings";
 
-    private const double TipX = 56;
-    private const double TipY = 22;
+    // The arrow scales about its own centre (see ScaleTransform in the XAML),
+    // so park that centre in the middle of the 176 px round stage.
+    private const double StageCentre = 88;
+    private const double ArrowCentreX = 8.75; // 14 units * 1.25 / 2
+    private const double ArrowCentreY = 15;   // 24 units * 1.25 / 2
 
     private readonly ShakeDetector _preview = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -173,8 +176,8 @@ public sealed partial class MainWindow : Window
         ArrowFill.Points = ArrowPoints(0, 0);
         ArrowOutline.Points = ArrowPoints(0, 0);
         ArrowShadow.Points = ArrowPoints(2.5, 3.5);
-        Canvas.SetLeft(ArrowHost, TipX);
-        Canvas.SetTop(ArrowHost, TipY);
+        Canvas.SetLeft(ArrowHost, StageCentre - ArrowCentreX);
+        Canvas.SetTop(ArrowHost, StageCentre - ArrowCentreY);
     }
 
     private void OnRender(object? sender, object e)
