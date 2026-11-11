@@ -30,6 +30,7 @@
     <Compile Include="..\ShakeDetector.cs" Link="Shared\ShakeDetector.cs" />
     <Compile Include="..\ArrowGeometry.cs" Link="Shared\ArrowGeometry.cs" />
     <Compile Include="..\UpdateBridge.cs" Link="Shared\UpdateBridge.cs" />
+    <Compile Include="..\Hotkey.cs" Link="Shared\Hotkey.cs" />
     <Content Include="Assets\ShakeCursor.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

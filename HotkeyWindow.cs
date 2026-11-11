@@ -4,16 +4,19 @@ using static ShakeCursor.NativeMethods;
 namespace ShakeCursor;
 
 /// <summary>
-/// A message-only window that owns one global hotkey (Ctrl+Alt+Shift+P) and
-/// raises <see cref="Pressed"/> on the UI thread when it is hit.
+/// A message-only window that owns one global hotkey and raises the callback
+/// on the UI thread when it is hit. The shortcut can change at any time.
 /// </summary>
 internal sealed class HotkeyWindow : NativeWindow, IDisposable
 {
     private const int HotkeyId = 1;
-    private const uint KeyP = 0x50;
 
     private readonly Action _pressed;
     private bool _registered;
+    private string? _attempted; // the combo last tried, so a failing one isn't retried on every settings reload
+
+    /// <summary>Raised (once per attempt) when Windows refuses the shortcut, usually because another app owns it.</summary>
+    public event Action<string>? Failed;
 
     public HotkeyWindow(Action pressed)
     {
@@ -21,23 +24,40 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
         CreateHandle(new CreateParams { Parent = new IntPtr(-3) /* HWND_MESSAGE */ });
     }
 
-    /// <summary>Registers or releases the hotkey. Another app may already own it.</summary>
-    public void SetEnabled(bool enabled)
+    /// <summary>Registers the shortcut, or releases it when disabled.</summary>
+    public void Apply(bool enabled, string combo)
     {
-        if (enabled == _registered)
+        if (!enabled)
+        {
+            Release();
+            _attempted = null;
+            return;
+        }
+
+        if (combo == _attempted)
         {
             return;
         }
 
-        if (enabled)
+        Release();
+        _attempted = combo;
+        if (!Hotkey.TryParse(combo, out uint modifiers, out uint vk))
         {
-            _registered = RegisterHotKey(Handle, HotkeyId, MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, KeyP);
-            if (!_registered)
-            {
-                Diagnostics.Log("pause hotkey unavailable (already in use)");
-            }
+            Failed?.Invoke(combo);
+            return;
         }
-        else
+
+        _registered = RegisterHotKey(Handle, HotkeyId, modifiers | MOD_NOREPEAT, vk);
+        if (!_registered)
+        {
+            Diagnostics.Log($"pause hotkey {combo} unavailable (already in use)");
+            Failed?.Invoke(combo);
+        }
+    }
+
+    private void Release()
+    {
+        if (_registered)
         {
             UnregisterHotKey(Handle, HotkeyId);
             _registered = false;
@@ -56,7 +76,7 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
 
     public void Dispose()
     {
-        SetEnabled(false);
+        Release();
         DestroyHandle();
     }
 }

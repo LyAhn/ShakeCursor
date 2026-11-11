@@ -210,9 +210,13 @@
                                                    Description="Hands the normal cursor back while a game or fullscreen video is in front.">
                                 <ToggleSwitch x:Name="PauseFullscreenToggle" OnContent="" OffContent="" MinWidth="0" />
                             </controls:SettingsCard>
-                            <controls:SettingsCard Header="Pause hotkey"
-                                                   Description="Ctrl + Alt + Shift + P pauses or resumes ShakeCursor from anywhere.">
-                                <ToggleSwitch x:Name="PauseHotkeyToggle" OnContent="" OffContent="" MinWidth="0" />
+                            <controls:SettingsCard x:Name="HotkeyCard" Header="Pause hotkey"
+                                                   Description="Pauses or resumes ShakeCursor from anywhere.">
+                                <StackPanel Orientation="Horizontal" Spacing="16">
+                                    <Button x:Name="HotkeyButton" MinWidth="190"
+                                            ToolTipService.ToolTip="Click, then press the new shortcut (Esc cancels)" />
+                                    <ToggleSwitch x:Name="PauseHotkeyToggle" OnContent="" OffContent="" MinWidth="0" />
+                                </StackPanel>
                             </controls:SettingsCard>
                             <controls:SettingsCard Header="Download updates automatically"
                                                    Description="Checks for a new version every 12 hours. You can still check by hand below.">

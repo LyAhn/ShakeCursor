@@ -52,6 +52,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
     private bool _userPaused;
     private bool _fullscreenActive;
     private HotkeyWindow? _hotkeyWindow;
+    private string? _pendingHotkeyFailure;
     private System.Windows.Forms.Timer? _fullscreenTimer;
     private string? _updateStatusText;
     private Action? _balloonAction; // what clicking the current balloon does; null opens settings
@@ -148,6 +149,10 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         _fullscreenTimer.Start();
 
         ShowWhatsNewIfUpdated();
+        if (_pendingHotkeyFailure is string failedCombo)
+        {
+            ShowHotkeyFailure(failedCombo);
+        }
 
         _tray.BalloonTipClicked += (_, _) =>
         {
@@ -267,6 +272,27 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         TogglePause();
         _balloonAction = null;
         _tray.ShowBalloonTip(1500, "ShakeCursor", _userPaused ? "Paused" : "Resumed", ToolTipIcon.None);
+    }
+
+    private void OnHotkeyFailed(string combo)
+    {
+        // The first attempt happens while settings load, before the tray icon exists.
+        if (_tray is null)
+        {
+            _pendingHotkeyFailure = combo;
+            return;
+        }
+        ShowHotkeyFailure(combo);
+    }
+
+    private void ShowHotkeyFailure(string combo)
+    {
+        _balloonAction = null; // clicking opens Settings
+        _tray.ShowBalloonTip(
+            8000,
+            "ShakeCursor",
+            $"The pause shortcut {Hotkey.Pretty(combo)} is already used by another app. Click here to choose a different one.",
+            ToolTipIcon.Warning);
     }
 
     /// <summary>True while a fullscreen app or game is in front (the shell's "busy" states).</summary>
@@ -404,8 +430,12 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         _shaker.LingerSeconds = _settings.LingerSeconds;
         _updater?.AutoCheck = _settings.AutoUpdate;
 
-        _hotkeyWindow ??= new HotkeyWindow(OnPauseHotkey);
-        _hotkeyWindow.SetEnabled(_settings.PauseHotkey);
+        if (_hotkeyWindow is null)
+        {
+            _hotkeyWindow = new HotkeyWindow(OnPauseHotkey);
+            _hotkeyWindow.Failed += OnHotkeyFailed;
+        }
+        _hotkeyWindow.Apply(_settings.PauseHotkey, _settings.PauseHotkeyKeys);
         UpdateFullscreen();
     }
 

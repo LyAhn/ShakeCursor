@@ -38,8 +38,10 @@ jobs:
           -p:Version=${{ steps.version.outputs.value }}
           -o artifacts/ShakeCursor/Settings
 
+      # Pinned so a future CLI release can't change packaging under us. Keep it
+      # in step with the Velopack package version in ShakeCursor.csproj.
       - name: Install Velopack CLI
-        run: dotnet tool install -g vpk
+        run: dotnet tool install -g vpk --version 1.2.161
 
       # Pulls earlier releases so vpk can build small delta updates. The first
       # Velopack release has nothing to download, which is fine.

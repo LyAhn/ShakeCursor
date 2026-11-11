@@ -63,6 +63,8 @@ public sealed partial class MainWindow : Window
         AutoUpdateToggle.IsOn = settings.AutoUpdate;
         PauseFullscreenToggle.IsOn = settings.PauseInFullscreen;
         PauseHotkeyToggle.IsOn = settings.PauseHotkey;
+        _hotkeyKeys = settings.PauseHotkeyKeys;
+        HotkeyButton.Content = Hotkey.Pretty(_hotkeyKeys);
         UpdateCard.Header = "ShakeCursor " + AppVersion();
         foreach (string app in settings.ExcludedApps)
         {
@@ -83,12 +85,33 @@ public sealed partial class MainWindow : Window
         {
             slider.ValueChanged += (_, _) => OnChanged();
         }
+
+        // "When shaking" must never be smaller than "At rest": dragging one past the
+        // other pushes the other along. Pushing the other slider re-enters its own
+        // handler, which finds the pair already consistent and stops.
+        RestSlider.ValueChanged += (_, _) =>
+        {
+            if (RestSlider.Value > MaxSlider.Value)
+            {
+                MaxSlider.Value = RestSlider.Value;
+            }
+        };
+        MaxSlider.ValueChanged += (_, _) =>
+        {
+            if (MaxSlider.Value < RestSlider.Value)
+            {
+                RestSlider.Value = MaxSlider.Value;
+            }
+        };
         ShadowToggle.Toggled += (_, _) => OnChanged();
         AutostartToggle.Toggled += (_, _) => AppSettings.Update(s => s.StartWithWindows = AutostartToggle.IsOn);
         ShortcutToggle.Toggled += (_, _) => DesktopShortcut.Set(ShortcutToggle.IsOn);
         AutoUpdateToggle.Toggled += (_, _) => AppSettings.Update(s => s.AutoUpdate = AutoUpdateToggle.IsOn);
         PauseFullscreenToggle.Toggled += (_, _) => AppSettings.Update(s => s.PauseInFullscreen = PauseFullscreenToggle.IsOn);
         PauseHotkeyToggle.Toggled += (_, _) => AppSettings.Update(s => s.PauseHotkey = PauseHotkeyToggle.IsOn);
+        HotkeyButton.Click += (_, _) => BeginHotkeyCapture();
+        HotkeyButton.PreviewKeyDown += HotkeyButton_PreviewKeyDown;
+        HotkeyButton.LostFocus += (_, _) => EndHotkeyCapture();
         UpdateButton.Click += (_, _) => OnUpdateButtonClicked();
 
         _updateTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
@@ -299,6 +322,68 @@ public sealed partial class MainWindow : Window
         _outline = d.OutlineColor;
         ShadowToggle.IsOn = d.Shadow;
         OnChanged();
+    }
+
+    // --- Pause hotkey capture --------------------------------------------------
+
+    private bool _capturingHotkey;
+    private string _hotkeyKeys = Hotkey.Default;
+
+    private void BeginHotkeyCapture()
+    {
+        _capturingHotkey = true;
+        HotkeyButton.Content = "Press the new shortcut...";
+    }
+
+    private void EndHotkeyCapture()
+    {
+        _capturingHotkey = false;
+        HotkeyButton.Content = Hotkey.Pretty(_hotkeyKeys);
+    }
+
+    private static bool IsKeyDown(Windows.System.VirtualKey key) =>
+        Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+    private void HotkeyButton_PreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        if (!_capturingHotkey)
+        {
+            return;
+        }
+        e.Handled = true;
+
+        Windows.System.VirtualKey key = e.Key;
+        if (key == Windows.System.VirtualKey.Escape)
+        {
+            EndHotkeyCapture();
+            return;
+        }
+
+        // A bare modifier press is just the start of the chord; wait for the real key.
+        if (key is Windows.System.VirtualKey.Control or Windows.System.VirtualKey.LeftControl
+                or Windows.System.VirtualKey.RightControl or Windows.System.VirtualKey.Shift
+                or Windows.System.VirtualKey.LeftShift or Windows.System.VirtualKey.RightShift
+                or Windows.System.VirtualKey.Menu or Windows.System.VirtualKey.LeftMenu
+                or Windows.System.VirtualKey.RightMenu)
+        {
+            return;
+        }
+
+        string? combo = Hotkey.Format(
+            IsKeyDown(Windows.System.VirtualKey.Control),
+            IsKeyDown(Windows.System.VirtualKey.Menu),
+            IsKeyDown(Windows.System.VirtualKey.Shift),
+            (uint)key);
+        if (combo is null)
+        {
+            HotkeyButton.Content = "Use Ctrl, Alt or Shift with a letter, number or F-key";
+            return;
+        }
+
+        _hotkeyKeys = combo;
+        AppSettings.Update(s => s.PauseHotkeyKeys = combo);
+        EndHotkeyCapture();
     }
 
     // --- Updates (the tray app owns Velopack; we show its status and send requests) ---

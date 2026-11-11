@@ -17,7 +17,8 @@ public sealed class AppSettings
     public bool Shadow { get; set; } = true;              // soft drop shadow
     public bool AutoUpdate { get; set; } = true;          // check for and download updates in the background
     public bool PauseInFullscreen { get; set; } = true;   // hand the real cursor back while a fullscreen app/game is in front
-    public bool PauseHotkey { get; set; } = true;         // Ctrl+Alt+Shift+P toggles pause from anywhere
+    public bool PauseHotkey { get; set; } = true;         // the pause shortcut is active
+    public string PauseHotkeyKeys { get; set; } = Hotkey.Default; // e.g. "Ctrl+Alt+Shift+P"
     public string? LastRunVersion { get; set; }           // version that last ran installed; drives the "what's new" note
     public bool FirstRunShown { get; set; }               // first-run balloon tip already shown
     public List<string> ExcludedApps { get; set; } = new(); // process names, e.g. "game.exe"
@@ -56,6 +57,8 @@ public sealed class AppSettings
         AutoUpdate = other.AutoUpdate;
         PauseInFullscreen = other.PauseInFullscreen;
         PauseHotkey = other.PauseHotkey;
+        PauseHotkeyKeys = other.PauseHotkeyKeys;
+        SizeCalibration = other.SizeCalibration;
         LastRunVersion = other.LastRunVersion;
         FirstRunShown = other.FirstRunShown;
         StartWithWindows = other.StartWithWindows;
@@ -126,9 +129,32 @@ public sealed class AppSettings
     /// </summary>
     public static void Update(Action<AppSettings> change)
     {
-        var settings = Load();
-        change(settings);
-        settings.Save();
+        // The tray app and the settings app both read-modify-write the whole file;
+        // without a lock, interleaved updates lose one side's change.
+        using var gate = new Mutex(false, @"Local\ShakeCursor.SettingsFile");
+        bool held = false;
+        try
+        {
+            try
+            {
+                held = gate.WaitOne(TimeSpan.FromSeconds(3));
+            }
+            catch (AbandonedMutexException)
+            {
+                held = true; // the other process died holding it; the file is still consistent
+            }
+
+            var settings = Load();
+            change(settings);
+            settings.Save();
+        }
+        finally
+        {
+            if (held)
+            {
+                gate.ReleaseMutex();
+            }
+        }
     }
 
     public void Save()
@@ -155,6 +181,7 @@ public sealed class AppSettings
     {
         RestScale = Math.Clamp(RestScale, 0.5f, 2.0f);
         MaxScale = Math.Clamp(MaxScale, 1.5f, 6.0f);
+        MaxScale = Math.Max(MaxScale, RestScale); // a shake must never make the cursor smaller
         Sensitivity = Math.Clamp(Sensitivity, 0.5f, 2.0f);
         LingerSeconds = Math.Clamp(LingerSeconds, 0.25f, 3.0f);
         ExcludedApps = (ExcludedApps ?? new List<string>())
@@ -162,6 +189,7 @@ public sealed class AppSettings
             .Select(NormalizeApp)
             .Distinct()
             .ToList();
+        if (!Hotkey.TryParse(PauseHotkeyKeys, out _, out _)) PauseHotkeyKeys = Hotkey.Default;
         if (!TryParseColor(FillColor, out _)) FillColor = "#000000";
         if (!TryParseColor(OutlineColor, out _)) OutlineColor = "#FFFFFF";
     }
