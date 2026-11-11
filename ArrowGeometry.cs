@@ -1,7 +1,7 @@
 namespace ShakeCursor;
 
 /// <summary>
-/// The arrow shape shared by the overlay and the settings preview, in "units"
+/// The arrow shape shared by the cursor renderer and the settings preview, in "units"
 /// (a classic arrow is roughly 14 wide x 24 tall). The tip sits at (0, 0) and
 /// is the pointer hotspot.
 /// </summary>

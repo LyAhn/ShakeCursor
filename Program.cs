@@ -37,7 +37,6 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
     private readonly AppSettings _settings;
     private readonly CursorSwapper _swapper;
     private readonly ShakeDetector _shaker = new();
-    private readonly OverlayForm _overlay;
     private readonly PointerWatcher _watcher;
     private readonly NotifyIcon _tray;
     private readonly EventWaitHandle? _cleanExit;
@@ -46,7 +45,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
     public ShakeCursorAppContext(bool openSettings)
     {
-        // The overlay is DPI-scaled from the system DPI (v1 assumes the primary
+        // The cursor is DPI-scaled from the system DPI (v1 assumes the primary
         // monitor's scale — mixed-DPI refinement comes later).
         float dpiScale = GetDpiForSystem() / 96f;
 
@@ -56,10 +55,9 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             _reloadDebounce.Stop();
             ReloadSettings();
         };
-        _swapper = new CursorSwapper();
+        _swapper = new CursorSwapper(dpiScale);
         _cleanExit = Watchdog.Spawn();
-        _overlay = new OverlayForm(dpiScale);
-        _watcher = new PointerWatcher(_swapper, _overlay, _shaker);
+        _watcher = new PointerWatcher(_swapper, _shaker);
 
         ApplySettings();
         ApplyAutostart();
@@ -72,6 +70,12 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
             EnableRaisingEvents = true,
         };
+        // WinForms only installs its sync context once a control exists; the
+        // old overlay window used to do that implicitly, so do it explicitly.
+        if (SynchronizationContext.Current is not WindowsFormsSynchronizationContext)
+        {
+            SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+        }
         var ui = SynchronizationContext.Current;
         FileSystemEventHandler onChange = (_, _) => ui?.Post(_ => { _reloadDebounce.Stop(); _reloadDebounce.Start(); }, null);
         _settingsFile.Changed += onChange;
@@ -100,9 +104,6 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true,
         };
-
-        _overlay.Show();            // creates the HWND (offscreen, no pixels yet)
-        _overlay.SetFrame(false, default, 0f); // hide until needed
 
         _foregroundProc = OnForegroundChanged;
         _foregroundHook = NativeMethods.SetWinEventHook(
@@ -142,16 +143,14 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
 
     private void ApplySettings()
     {
-        _overlay.SetSizes(_settings.RestScale, _settings.MaxScale);
         AppSettings.TryParseColor(_settings.FillColor, out var fill);
         AppSettings.TryParseColor(_settings.OutlineColor, out var outline);
-        _overlay.SetStyle(fill, outline, _settings.Shadow);
+        _swapper.Configure(_settings.RestScale, _settings.MaxScale, fill, outline, _settings.Shadow);
         _shaker.Sensitivity = _settings.Sensitivity;
         _shaker.LingerSeconds = _settings.LingerSeconds;
     }
 
-    // Instantly re-claim topmost whenever the foreground window changes (e.g.
-    // clicking the taskbar), in addition to the fast periodic fallback.
+    // Re-evaluates the excluded-apps list whenever the foreground window changes.
     private readonly NativeMethods.WinEventProc _foregroundProc;
     private readonly IntPtr _foregroundHook;
 
@@ -159,7 +158,6 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         IntPtr hHook, uint evt, IntPtr hwnd, int idObject, int idChild,
         uint dwEventThread, uint dwmsEventTime)
     {
-        _overlay.PokeTopmost();
         UpdateExclusion();
     }
 
@@ -246,6 +244,26 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         }
     }
 
+    /// <summary>Asks an open settings window to close so it doesn't outlive the tray app.</summary>
+    private static void CloseSettingsWindow()
+    {
+        foreach (var process in System.Diagnostics.Process.GetProcessesByName("ShakeCursor.Settings"))
+        {
+            try
+            {
+                process.CloseMainWindow();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // Already exiting.
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+    }
+
     protected override void ExitThreadCore()
     {
         _settingsFile.Dispose();
@@ -253,7 +271,7 @@ internal sealed class ShakeCursorAppContext : ApplicationContext
         _swapper.Restore();
         _tray.Visible = false;
         _tray.Dispose();
-        _overlay.Dispose();
+        CloseSettingsWindow();
         _cleanExit?.Set();
         base.ExitThreadCore();
     }

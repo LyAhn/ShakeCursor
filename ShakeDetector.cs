@@ -12,7 +12,7 @@ namespace ShakeCursor;
 ///
 /// Reversal events accumulate intensity (decaying exponentially), which maps
 /// to a shake progress value (0..1); the returned progress is exponentially
-/// smoothed so the animation feels fluid rather than binary. The overlay maps
+/// smoothed so the animation feels fluid rather than binary. The cursor renderer maps
 /// progress to actual cursor size (rest size → max size).
 /// </summary>
 internal sealed class ShakeDetector
@@ -22,8 +22,10 @@ internal sealed class ShakeDetector
 
     private const float VelocityTau = 0.02f;      // s; smoothing of velocity (kills per-tick noise)
     private const float SignDeadzone = 150f;      // px/s; below this the dominant axis has no sign
-    private const float MinShakeSpeed = 1200f;    // px/s; swing peak must exceed this for a reversal to count
-    private const float SpeedCap = 2500f;         // px/s; clamps one reversal's contribution
+    private const float MinShakeSpeed = 1500f;    // px/s at sensitivity 1; swing peak must exceed this (÷ sensitivity)
+    private const int MinChain = 3;               // reversals in quick succession before any count (rejects flick + correction)
+    private const double ChainGap = 0.4;          // s; max gap between reversals of one shake
+    private const float SpeedCap = 3500f;         // px/s; clamps one reversal's contribution
     private const float ReversalGain = 0.8f;      // per reversal event (× user sensitivity)
 
     private const float IntensityHoldTau = 0.55f; // s; decay while the pointer keeps moving fast
@@ -44,6 +46,8 @@ internal sealed class ShakeDetector
     private float _smoothVy;
     private float _peakRecent;
     private int _prevSign;
+    private int _chain;
+    private double _sinceReversal = 999;
     private float _intensity;
     private float _progress;
     private double _timeSinceMovement;
@@ -101,10 +105,17 @@ internal sealed class ShakeDetector
         // Dominant-axis sign flip while the swing peak is high = reversal.
         float dominant = MathF.Abs(_smoothVx) >= MathF.Abs(_smoothVy) ? _smoothVx : _smoothVy;
         int signNow = MathF.Abs(dominant) > SignDeadzone ? Math.Sign(dominant) : 0;
-        if (signNow != 0 && _prevSign != 0 && signNow != _prevSign && _peakRecent >= MinShakeSpeed)
+        _sinceReversal += dt;
+        float minSpeed = MinShakeSpeed / MathF.Max(Sensitivity, 0.1f);
+        if (signNow != 0 && _prevSign != 0 && signNow != _prevSign && _peakRecent >= minSpeed)
         {
-            _intensity += Math.Min(_peakRecent, SpeedCap) * ReversalGain * Sensitivity;
-            ReversalCount++;
+            _chain = _sinceReversal <= ChainGap ? _chain + 1 : 1;
+            _sinceReversal = 0;
+            if (_chain >= MinChain)
+            {
+                _intensity += Math.Min(_peakRecent, SpeedCap) * ReversalGain * Sensitivity;
+                ReversalCount++;
+            }
             _peakRecent = smoothSpeed; // start the next swing's peak from here
         }
         if (signNow != 0)
@@ -152,6 +163,8 @@ internal sealed class ShakeDetector
         _smoothVx = _smoothVy = 0f;
         _peakRecent = 0f;
         _prevSign = 0;
+        _chain = 0;
+        _sinceReversal = 999;
         _intensity = 0f;
         _progress = 0f;
         _timeSinceMovement = 0;

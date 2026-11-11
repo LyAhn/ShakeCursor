@@ -10,25 +10,8 @@ internal static class NativeMethods
 
     public const uint SPI_SETCURSORS = 0x0057;      // reloads all system cursors from registry
 
-    public const int CURSOR_SHOWING = 0x00000001;
 
-    public const int WS_POPUP = unchecked((int)0x80000000);
 
-    public const int WS_EX_LAYERED     = 0x00080000;
-    public const int WS_EX_TRANSPARENT = 0x00000020;
-    public const int WS_EX_TOPMOST     = 0x00000008;
-    public const int WS_EX_NOACTIVATE  = 0x08000000;
-    public const int WS_EX_TOOLWINDOW  = 0x00000080;
-
-    public const uint ULW_ALPHA = 0x00000002;
-
-    public const byte AC_SRC_OVER  = 0;
-    public const byte AC_SRC_ALPHA = 1;
-
-    public const int SW_HIDE = 0;
-    public const int SW_SHOWNOACTIVATE = 4;
-
-    public static readonly IntPtr HWND_TOPMOST = new(-1);
 
     // --- Structs -------------------------------------------------------------
 
@@ -37,22 +20,6 @@ internal static class NativeMethods
     {
         public int X;
         public int Y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct SIZE
-    {
-        public int Width;
-        public int Height;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct BLENDFUNCTION
-    {
-        public byte BlendOp;
-        public byte BlendFlags;
-        public byte SourceConstantAlpha;
-        public byte AlphaFormat;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -70,48 +37,34 @@ internal static class NativeMethods
     public static extern bool SetSystemCursor(IntPtr hcur, uint id);
 
     [DllImport("user32.dll", SetLastError = true)]
-    public static extern IntPtr LoadCursor(IntPtr hInstance, IntPtr lpCursorName);
-
-    public static readonly IntPtr IDC_ARROW = new(32512);
-
-    [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern IntPtr CreateCursor(
-        IntPtr hInst, int xHotSpot, int yHotSpot,
-        int nWidth, int nHeight,
-        byte[] andPlane, byte[] xorPlane);
 
     [DllImport("user32.dll")]
     public static extern bool GetCursorInfo(ref CURSORINFO pci);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ICONINFO
+    {
+        [MarshalAs(UnmanagedType.Bool)] public bool fIcon;
+        public int xHotspot;
+        public int yHotspot;
+        public IntPtr hbmMask;
+        public IntPtr hbmColor;
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
-    public static extern bool UpdateLayeredWindow(
-        IntPtr hWnd,
-        IntPtr hdcDst,
-        ref POINT pptDst,
-        ref SIZE psize,
-        IntPtr hdcSource,
-        ref POINT pptSrc,
-        uint crKey,
-        ref BLENDFUNCTION pblend,
-        uint dwFlags);
+    public static extern IntPtr CreateIconIndirect(ref ICONINFO piconinfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool DestroyIcon(IntPtr hIcon);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    public static extern IntPtr CreateBitmap(int nWidth, int nHeight, uint cPlanes, uint cBitsPerPel, IntPtr lpvBits);
+
+    public const uint MOUSEEVENTF_MOVE = 0x0001;
 
     [DllImport("user32.dll")]
-    public static extern IntPtr GetDC(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
-
-    [DllImport("gdi32.dll", SetLastError = true)]
-    public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
-
-    [DllImport("gdi32.dll", SetLastError = true)]
-    public static extern bool DeleteDC(IntPtr hdc);
-
-    [DllImport("gdi32.dll", SetLastError = true)]
-    public static extern IntPtr SelectObject(IntPtr hdc, IntPtr hObject);
+    public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
 
     [DllImport("gdi32.dll", SetLastError = true)]
     public static extern bool DeleteObject(IntPtr hObject);
@@ -144,14 +97,6 @@ internal static class NativeMethods
         IntPtr hdc, ref BITMAPINFO pbmi, uint iUsage,
         out IntPtr ppvBits, IntPtr hSection, uint dwOffset);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern bool SetWindowPos(
-        IntPtr hWnd, IntPtr hWndInsertAfter,
-        int x, int y, int cx, int cy, uint uFlags);
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
     public delegate void WinEventProc(
         IntPtr hHook, uint evt, IntPtr hwnd, int idObject, int idChild,
         uint dwEventThread, uint dwmsEventTime);
@@ -169,9 +114,6 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-
-    [DllImport("kernel32.dll")]
-    public static extern IntPtr GetModuleHandle(string? lpModuleName);
 
     [DllImport("user32.dll")]
     public static extern uint GetDpiForSystem();

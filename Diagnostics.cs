@@ -13,11 +13,6 @@ internal static class Diagnostics
     private static readonly string LogPath =
         Path.Combine(Path.GetTempPath(), "ShakeCursor.log");
 
-    public static void LogULWFailure(int win32Error)
-    {
-        Log($"UpdateLayeredWindow failed (win32 error {win32Error})");
-    }
-
     public static void Log(string message)
     {
         lock (_lock)
